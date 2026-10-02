@@ -5,7 +5,12 @@ export const pairKey = (a, b) => [a, b].sort().join('|');
 export function conditionsMet(conditions = {}, context = {}) {
   const statuses = context.statuses instanceof Set ? context.statuses : new Set(context.statuses ?? []);
   return (!conditions.environment || conditions.environment === context.environment)
-    && (!conditions.statuses || conditions.statuses.every(id => statuses.has(id)));
+    && (!conditions.statuses || conditions.statuses.every(id => statuses.has(id)))
+    && (conditions.healthBelow === undefined || context.healthRatio < conditions.healthBelow)
+    && (conditions.minimumEnemies === undefined || context.enemyCount >= conditions.minimumEnemies)
+    && (conditions.requiredTags === undefined || conditions.requiredTags.every(tag => context.tags?.includes(tag)))
+    && (conditions.mastery === undefined || Object.entries(conditions.mastery).every(([id, level]) => (context.mastery?.[id] ?? 0) >= level))
+    && (conditions.shielded === undefined || conditions.shielded === Boolean(context.shielded));
 }
 
 export class ReactionEngine {
@@ -51,7 +56,8 @@ export class ReactionEngine {
   }
 }
 
-export const reactionEngine = new ReactionEngine();
+export let reactionEngine = new ReactionEngine();
+export function rebuildReactionIndex() { reactionEngine = new ReactionEngine(); }
 
 export function resolveExperiment(a, b, context = {}) {
   if (!ELEMENT_BY_ID[a]?.enabled || !ELEMENT_BY_ID[b]?.enabled) return null;

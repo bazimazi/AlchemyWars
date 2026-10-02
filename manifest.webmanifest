@@ -1,0 +1,10 @@
+{
+  "name": "Alchemy Wars — The Observatory",
+  "short_name": "Alchemy Wars",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#131a18",
+  "theme_color": "#131a18",
+  "icons": [{ "src": "assets/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

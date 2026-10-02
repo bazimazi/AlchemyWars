@@ -1,10 +1,12 @@
 // Content is separate from the engine. Every effect is interpreted by a reusable primitive.
+import { ADVANCED_ELEMENTS, EXTRA_REACTIONS, EXTRA_VESSELS, EXTRA_ENEMIES, EXTRA_BOSSES, CAMPAIGN_STAGES } from './expansion.js';
 const meta = { version: 1, enabled: true, releaseDate: '2026-10-01' };
 const status = (id, duration, intensity = 1, extra = {}) => ({ type: 'status', status: id, duration, intensity, ...extra });
 const damage = (scale, extra = {}) => ({ type: 'damage', scale, ...extra });
 const chain = (scale, count = 2) => ({ type: 'chain', scale, count, status: 'shock', element: 'lightning' });
 
-export const CONTENT_VERSION = 'prototype-1';
+export let CONTENT_VERSION = '0.3.0';
+export function setContentVersion(version) { CONTENT_VERSION = version; }
 export const BALANCE = {
   step: 0.25, maxTime: 90, maxChainDepth: 4, maxEventsPerAction: 80,
   residueDuration: 7, reactionCooldown: 2.5, criticalChance: 0.08, criticalMultiplier: 1.5,
@@ -50,14 +52,16 @@ export const REACTIONS = [
   { id: 'thunderstorm', name: 'Thunderstorm', inputs: ['storm-cloud', 'lightning'], category: 'Environment', rarity: 'Rare', color: '#b7b5f1', icon: 'bolt', tags: ['weather', 'chain'], hint: 'A cloud waits for the sky to speak.', description: 'Lightning leaps between three enemies and disrupts them.', effects: [damage(0.55), chain(0.6, 3)] },
   { id: 'thermal-shock', name: 'Thermal Shock', inputs: ['fire', 'water'], category: 'Conditional', rarity: 'Rare', color: '#e9bdb0', icon: 'burst', tags: ['heat', 'cold'], conditions: { statuses: ['freeze'] }, priority: 10, hint: 'What happens when a frozen foe meets sudden heat?', description: 'When the target is frozen, sudden heat shatters it for heavy damage.', effects: [damage(1.5), status('vulnerable', 5, 0.35)] },
   { id: 'storm-surge', name: 'Storm Surge', inputs: ['lightning', 'water'], category: 'Conditional', rarity: 'Rare', color: '#abcaee', icon: 'bolt', tags: ['weather', 'electricity'], conditions: { environment: 'rain' }, priority: 10, hint: 'Rain gives a wandering spark a thousand paths.', description: 'During rain, electricity reaches three additional enemies.', effects: [damage(0.3), chain(0.65, 3)] },
-].map(r => ({ ...meta, output: r.id, rarity: 'Common', priority: 0, cooldown: BALANCE.reactionCooldown, ...r }));
+  ...EXTRA_REACTIONS,
+].map(r => ({ ...meta, output: r.id, rarity: 'Common', priority: 0, cooldown: BALANCE.reactionCooldown, trigger: 'OnElementApplied', ...r }));
 
 export const ELEMENTS = [
+  ...ADVANCED_ELEMENTS.map(([id, name, color, icon, tags, role, description, effects], i) => ({ ...meta, id, name, color, icon, tags, role, description, lore: description, rarity: 'Rare', tier: 2, affinity: id, power: 1, effects, base: true, unlockResearch: 'element-' + id })),
   ...baseElements.map(([id, name, color, icon, tags, role, description, effects]) => ({ ...meta, id, name, color, icon, tags, role, description, lore: `One of the ten fragments left by the Great Sundering. ${description}`, rarity: 'Common', tier: 1, affinity: id, power: 1, effects, base: true })),
   ...REACTIONS.map(r => ({ ...meta, id: r.output, name: r.name, color: r.color, icon: r.icon, tags: r.tags, role: r.category, description: r.description, lore: `A relationship between ${r.inputs.map(id => baseElements.find(e => e[0] === id)?.[1] ?? id.replaceAll('-', ' ')).join(' and ')}. ${r.description}`, rarity: r.rarity, tier: r.inputs.some(id => !baseElements.some(e => e[0] === id)) ? 3 : 2, affinity: r.inputs[0], power: 0.85, effects: r.effects, base: false })),
 ];
-export const ELEMENT_BY_ID = Object.fromEntries(ELEMENTS.map(e => [e.id, e]));
-export const REACTION_BY_ID = Object.fromEntries(REACTIONS.map(r => [r.id, r]));
+export const ELEMENT_BY_ID = Object.assign(Object.create(null), Object.fromEntries(ELEMENTS.map(e => [e.id, e])));
+export const REACTION_BY_ID = Object.assign(Object.create(null), Object.fromEntries(REACTIONS.map(r => [r.id, r])));
 
 export const STATUSES = Object.fromEntries([
   ['burn', 'Burn', 'BRN', { harmful: true, maxStacks: 3, periodic: 'damage' }],
@@ -73,6 +77,13 @@ export const STATUSES = Object.fromEntries([
   ['vulnerable', 'Vulnerable', 'VULN', { harmful: true, maxStacks: 1, receivedMultiplier: 1 }],
   ['conductive', 'Conductive', 'COND', { harmful: true, maxStacks: 1, elementalReceivedMultiplier: { electricity: 1 } }],
   ['regeneration', 'Regeneration', 'REG', { harmful: false, maxStacks: 1, periodic: 'heal' }],
+  ['bleed', 'Bleed', 'BLD', { harmful: true, maxStacks: 3, periodic: 'damage' }],
+  ['silence', 'Silence', 'SIL', { harmful: true, maxStacks: 1, suppressEffects: true }],
+  ['barrier', 'Barrier', 'BAR', { harmful: false, maxStacks: 1, receivedMultiplier: -1 }],
+  ['resistance-break', 'Resistance break', 'RES', { harmful: true, maxStacks: 1, receivedMultiplier: 1 }],
+  ['drain', 'Drain', 'DRN', { harmful: false, maxStacks: 1, lifesteal: 1 }],
+  ['reflect', 'Reflect', 'RFL', { harmful: false, maxStacks: 1, reflect: 1 }],
+  ['taunt', 'Taunt', 'TNT', { harmful: false, maxStacks: 1, taunt: true }],
 ].map(([id, name, short, properties]) => [id, { ...meta, id, name, short, ...properties }]));
 
 export const VESSELS = [
@@ -81,15 +92,18 @@ export const VESSELS = [
   { id: 'sylph', name: 'Tide Sylph', role: 'Weaver', shape: 'sylph', hp: 245, attack: 27, armor: 12, interval: 1.9, elements: ['water', 'lightning'] },
   { id: 'keeper', name: 'Grove Keeper', role: 'Mender', shape: 'keeper', hp: 255, attack: 25, armor: 14, interval: 2.3, elements: ['nature', 'light'] },
   { id: 'wraith', name: 'Dusk Wraith', role: 'Invoker', shape: 'wraith', hp: 225, attack: 32, armor: 10, interval: 2.2, elements: ['shadow', 'poison'] },
+  ...EXTRA_VESSELS,
 ].map(v => ({ ...meta, tags: [v.role.toLowerCase()], ...v }));
-export const VESSEL_BY_ID = Object.fromEntries(VESSELS.map(v => [v.id, v]));
+export const VESSEL_BY_ID = Object.assign(Object.create(null), Object.fromEntries(VESSELS.map(v => [v.id, v])));
 export const ENEMIES = [
   { id: 'slime', name: 'Moss Slime', shape: 'slime', hp: 190, attack: 21, armor: 8, interval: 2.5, elements: ['nature', 'water'], tags: ['growth'] },
   { id: 'imp', name: 'Cinder Imp', shape: 'sprite', hp: 175, attack: 25, armor: 6, interval: 2.3, elements: ['fire', 'wind'], tags: ['heat'] },
   { id: 'sentinel', name: 'Ruin Sentinel', shape: 'golem', hp: 245, attack: 20, armor: 20, interval: 2.7, elements: ['earth', 'ice'], tags: ['armor'] },
-  { id: 'molten-king', name: 'The Molten King', shape: 'king', hp: 2000, attack: 85, armor: 38, interval: 2.4, elements: ['fire', 'magma'], tags: ['boss', 'heat'], immunities: ['burn'], weaknesses: [{ status: 'wet', armorMultiplier: 0.35 }], phases: [{ below: 0.5, attackMultiplier: 1.25, intervalMultiplier: 0.9, label: 'The core awakens' }] },
+  { id: 'molten-king', name: 'The Molten King', shape: 'king', hp: 850, attack: 43, armor: 38, interval: 2.4, elements: ['fire', 'magma'], tags: ['boss', 'heat'], immunities: ['burn'], weaknesses: [{ status: 'wet', armorMultiplier: 0.35 }], phases: [{ below: 0.5, attackMultiplier: 1.25, intervalMultiplier: 0.9, label: 'The core awakens' }] },
+  ...EXTRA_ENEMIES, ...EXTRA_BOSSES,
+  { id: 'ashling', name: 'Ashling', shape: 'sprite', hp: 210, attack: 25, armor: 11, interval: 2.4, elements: ['fire', 'spirit'], tags: ['heat'] },
 ].map(e => ({ ...meta, ...e }));
-export const ENEMY_BY_ID = Object.fromEntries(ENEMIES.map(e => [e.id, e]));
+export const ENEMY_BY_ID = Object.assign(Object.create(null), Object.fromEntries(ENEMIES.map(e => [e.id, e])));
 
 export const RELICS = [
   { id: 'none', name: 'No relic', description: 'An open relic slot.', tags: [], modifiers: {} },
@@ -97,18 +111,20 @@ export const RELICS = [
   { id: 'storm-core', name: 'Storm Core', description: 'Chain effects reach one extra target.', tags: ['electricity'], discoveries: 4, modifiers: { chainTargets: 1 } },
   { id: 'world-seed', name: 'World Seed', description: 'All healing is 25% stronger.', tags: ['growth'], discoveries: 6, modifiers: { healingMultiplier: 1.25 } },
 ].map(r => ({ ...meta, ...r }));
-export const RELIC_BY_ID = Object.fromEntries(RELICS.map(r => [r.id, r]));
+export const RELIC_BY_ID = Object.assign(Object.create(null), Object.fromEntries(RELICS.map(r => [r.id, r])));
 export const RESEARCH = [
   { ...meta, id: 'resonance', name: 'Chain Resonance', icon: 'bolt', cost: 15, description: 'Reaction chains can travel one level deeper.', modifiers: { chainDepth: 1 } },
   { ...meta, id: 'warding', name: 'Protective Binding', icon: 'shield', cost: 15, description: 'Every vessel enters battle with a 30-point shield.', modifiers: { startingShield: 30 } },
   { ...meta, id: 'cultivation', name: 'Living Alchemy', icon: 'leaf', cost: 20, description: 'Regeneration lasts 3 seconds longer.', modifiers: { statusDuration: { regeneration: 3 } } },
+  ...ADVANCED_ELEMENTS.map(([id, name, , icon], i) => ({ ...meta, id: 'element-' + id, name: name + ' Theory', icon, cost: 15 + i * 3, description: 'Unlock ' + name + ' for experimentation and combat.', unlockElement: id, modifiers: {}, requires: i > 4 ? ['element-' + ADVANCED_ELEMENTS[i - 5][0]] : [] })),
 ];
 export const ENCOUNTERS = [
   { ...meta, id: 'whispering-grove', name: 'Whispering Grove', region: 'The First Flame', label: '01', environment: 'forest', description: 'Something stirs beneath the roots of the old observatory.', tip: 'Watch how the Tide Sylph combines water and lightning.', enemies: ['slime', 'slime', 'sentinel', 'imp', 'slime'], gold: 30, knowledge: 4, xp: 30 },
   { ...meta, id: 'drowned-ruins', name: 'The Drowned Ruins', region: 'The Drowned Kingdom', label: '02', environment: 'rain', description: 'Rain awakens the forgotten machines of a sunken kingdom.', tip: 'Rain changes the relationship between water and lightning.', enemies: ['sentinel', 'slime', 'sentinel', 'imp', 'slime'], scale: 1.15, gold: 45, knowledge: 6, xp: 45 },
   { ...meta, id: 'molten-throne', name: 'The Molten Throne', region: 'The First Flame', label: '03', environment: 'volcanic', boss: true, description: 'A king of living stone guards a fragment of the ancient system.', tip: 'Burn cannot harm the king. Water softens his armor; lightning exploits the opening.', enemies: ['molten-king', 'imp', 'imp'], gold: 90, knowledge: 12, xp: 80 },
+  ...CAMPAIGN_STAGES.map(e => ({ ...meta, ...e })),
 ];
-export const ENCOUNTER_BY_ID = Object.fromEntries(ENCOUNTERS.map(e => [e.id, e]));
+export const ENCOUNTER_BY_ID = Object.assign(Object.create(null), Object.fromEntries(ENCOUNTERS.map(e => [e.id, e])));
 
 export function validateContent() {
   const issues = [];
@@ -120,7 +136,7 @@ export function validateContent() {
       if (!entry.version || typeof entry.enabled !== 'boolean') issues.push(`Missing version metadata: ${entry.id}`);
     }
   }
-  const effectTypes = new Set(['damage', 'status', 'shield', 'heal', 'cleanse', 'chain', 'spread', 'applyElement']);
+  const effectTypes = new Set(['damage', 'status', 'shield', 'heal', 'cleanse', 'chain', 'spread', 'applyElement', 'summon', 'resurrect', 'explode', 'transform']);
   for (const entry of [...ELEMENTS, ...REACTIONS]) {
     if (entry.inputs?.some(id => !ELEMENT_BY_ID[id]) || (entry.output && !ELEMENT_BY_ID[entry.output])) issues.push(`Unknown element in ${entry.id}`);
     if (entry.conditions?.statuses?.some(id => !STATUSES[id])) issues.push(`Unknown condition in ${entry.id}`);
