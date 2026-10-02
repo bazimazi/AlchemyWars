@@ -7,10 +7,11 @@ A playable discovery-driven auto-battler. Experiment with elements, construct a 
 Requires Node.js 22 or newer; developed and verified on Node.js 24.
 
 ```sh
+npm ci
 npm start
 ```
 
-Open `http://127.0.0.1:5173`. No installation or account is required for local play. For another port in PowerShell: `$env:PORT=5175` before `npm start`.
+Open `http://127.0.0.1:5173`. No account is required for local play. For another port in PowerShell: `$env:PORT=5175` before `npm start`.
 
 The Assembly screen creates a separate server-backed account. Local journals remain on the device and can be exported from Settings. Online rewards, opponents, seeds and progression are validated by the server. Local journals cannot be imported into online accounts.
 
@@ -34,9 +35,11 @@ npm run verify
 npm run balance -- 100 --report
 ```
 
-`verify` runs engine/server tests, validates and builds `dist/`, then tests desktop and mobile browser flows. Playwright is the only development dependency; it supplies isolated browser automation. The game and server have no runtime dependencies.
+`verify` compiles all source and tests with strict TypeScript, runs 122 engine/server tests, validates and builds `dist/`, then runs 14 desktop/mobile browser tests. TypeScript and Node typings provide strict checks; Playwright supplies isolated browser automation. The game and server have no runtime dependencies.
 
 `npm run balance -- 100 --all --report` includes every campaign stage. Generated findings are written to [docs/BALANCE.md](docs/BALANCE.md).
+
+For development, `npm run dev` recompiles source changes and restarts its server. Refresh the browser after a successful build. `npm run typecheck` checks types without generating files.
 
 ## Hosting and development
 

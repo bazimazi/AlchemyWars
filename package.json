@@ -8,15 +8,19 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "node scripts/serve.js",
-    "start": "node scripts/serve.js",
-    "test": "node --test",
-    "build": "node scripts/build.js",
-    "balance": "node scripts/balance.js",
+    "compile": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.worker.json --noEmit",
+    "dev": "npm run build && node .build/scripts/dev.js",
+    "start": "npm run build && node .build/scripts/serve.js --dist",
+    "test": "npm run compile && node --test .build/test/*.test.js",
+    "build": "npm run compile && node .build/scripts/build.js",
+    "balance": "npm run compile && node .build/scripts/balance.js",
     "test:e2e": "playwright test",
     "verify": "npm test && npm run build && npm run test:e2e"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0"
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^24.19.1",
+    "typescript": "^7.0.2"
   }
 }

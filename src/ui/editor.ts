@@ -1,0 +1,24 @@
+import { query, errorMessage } from './dom.js';
+import type { Player } from '../types.js';
+import { CONTENT_KINDS, contentTemplate, validatePack, installContentPack, contentAudit, proposeReaction } from '../core/content-tools.js';
+import { ELEMENTS, ENCOUNTERS } from '../data/content.js';
+import { makeBattleConfig, simulateBattle } from '../core/combat.js';
+import { resolveExperiment } from '../core/reactions.js';
+const options = ELEMENTS.map(e => '<option value="' + e.id + '">' + e.name + '</option>').join('');
+export function renderEditor() {
+  return '<div class="page-heading"><div><div class="eyebrow">INTERNAL CONTENT TOOLS</div><h1>Alchemy Editor</h1><p>Author versioned definitions, inspect relationships and simulate the current formation.</p></div></div><div class="two-column"><section class="panel content-panel"><h2>Content pack</h2><label>Definition type<select id="editor-kind">' + CONTENT_KINDS.map(k => '<option>' + k + '</option>').join('') + '</select></label><div class="button-row"><button class="button secondary" data-action="editor-template">Create template</button><button class="button secondary" data-action="editor-audit">Audit content</button></div><label>Pack JSON<textarea id="editor-json" rows="24" spellcheck="false" aria-label="Content pack JSON"></textarea></label><div class="button-row"><button class="button primary" data-action="editor-validate">Validate</button><button class="button secondary" data-action="editor-preview">Preview for this session</button><button class="button secondary" data-action="editor-export">Export pack</button></div><p class="note">Preview requires local play. Export reviewed packs to assets/content-packs.json and restart the server to release a matching client and server version. Replays from another content version are rejected.</p></section><section class="panel content-panel"><h2>Interaction preview</h2><label>First element<select id="editor-a">' + options + '</select></label><label>Second element<select id="editor-b">' + options + '</select></label><div class="button-row"><button class="button secondary" data-action="editor-reaction">Test reaction</button><button class="button secondary" data-action="editor-propose">Propose relationship</button></div><h2>Combat simulation</h2><label>Encounter<select id="editor-encounter">' + ENCOUNTERS.map(e => '<option value="' + e.id + '">' + e.name + '</option>').join('') + '</select></label><label>Seed<input id="editor-seed" type="number" value="42"></label><button class="button primary" data-action="editor-simulate">Simulate and inspect chain</button><h3>Inspection output</h3><pre id="editor-output" tabindex="0">Ready.</pre></section></div>';
+}
+export function editorAction(action: string, player: Player, online: boolean) {
+  const output = query<HTMLInputElement>('#editor-output'), editor = query<HTMLInputElement>('#editor-json');
+  const pack = () => JSON.parse(editor.value);
+  const show = (value: unknown) => { output.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2); };
+  try {
+    if (action === 'template') { const kind = query<HTMLInputElement>('#editor-kind').value; const entry = contentTemplate(kind); const value = { id: 'experimental-pack', version: 1, [kind]: [entry] }; if (kind === 'reactions') { entry.id = "output" in entry ? entry.output : entry.id; Object.assign(value, { elements: [contentTemplate('elements')] }); } editor.value = JSON.stringify(value, null, 2); }
+    if (action === 'validate') { const issues = validatePack(pack()); show(issues.length ? issues : 'Valid pack. Ready for designer review.'); }
+    if (action === 'audit') show(contentAudit());
+    if (action === 'preview') { if (online) throw new Error('Sign out before previewing local content.'); show(installContentPack(pack())); }
+    if (action === 'export') { const value = pack(), issues = validatePack(value); if (issues.length) throw new Error(issues.join('\n')); const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })); const a = document.createElement('a'); a.href = url; a.download = value.id + '.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    if (action === 'reaction' || action === 'propose') { const a = query<HTMLInputElement>('#editor-a').value, b = query<HTMLInputElement>('#editor-b').value; show(action === 'reaction' ? resolveExperiment(a, b) ?? 'No stable reaction.' : proposeReaction(a, b)); }
+    if (action === 'simulate') { const result = simulateBattle(makeBattleConfig(player, query<HTMLInputElement>('#editor-encounter').value, Number(query<HTMLInputElement>('#editor-seed').value))); show({ outcome: result.outcome, duration: result.duration, report: result.report, final: result.final, eventChain: result.events }); }
+  } catch (error) { show(errorMessage(error)); }
+}
