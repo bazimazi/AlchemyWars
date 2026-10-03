@@ -17,12 +17,13 @@ The Assembly screen creates a separate server-backed account. Local journals rem
 
 ## Included
 
-- 20 primordial elements, 64 reactions and 84 total usable elements; 10 starting elements.
+- 20 primordial elements, 124 reactions and 87 total usable elements; 10 starting elements.
 - 15 vessels, 20 regular enemies, five distinct bosses, and 63 campaign encounters across five chapters and a prologue.
-- Laboratory, contextual and mastery experiments, secrets, hints, codex, connected discovery graph and recovered story memories.
+- Laboratory, contextual and mastery experiments, secrets, hints, creature/artifact/lore codex, saved combat chains, connected discovery graph and recovered story memories.
+- Configurable ability slots, capped vessel growth and individual vessel animation profiles.
 - Mastery, research, talents, equipment, relics, evolution, specialization, quests, achievements and cosmetic themes.
 - Eight-floor roguelite, endless dungeon, changing Infinite Alchemy, daily drafts, procedural boss variants, daily trials, weekly guardians and seasonal festival battles.
-- Account persistence, normalized asynchronous PvP, drafted PvP, friends, guild research, raids, guild competition, shared discoveries and player-authored experiment challenges.
+- Account persistence, normalized asynchronous PvP, drafted PvP, Element Wars, Weekly Crucible, friends, guild missions, elemental exchange, collaborative experiments, raids, guild competition, shared discoveries and player-authored experiment challenges.
 - Deterministic replays, contribution reports, debug inspection, internal content editor, versioned content packs, balance simulator and live configuration.
 - Responsive desktop/mobile UI, keyboard controls, readable status labels, text scaling, contrast and motion settings, sound/haptic controls, left-handed layouts and offline caching.
 
@@ -35,7 +36,7 @@ npm run verify
 npm run balance -- 100 --report
 ```
 
-`verify` compiles all source and tests with strict TypeScript, runs 122 engine/server tests, validates and builds `dist/`, then runs 14 desktop/mobile browser tests. TypeScript and Node typings provide strict checks; Playwright supplies isolated browser automation. The game and server have no runtime dependencies.
+`verify` compiles all source and tests with strict TypeScript, runs 192 engine/server tests, validates and builds `dist/`, then runs 20 desktop/mobile browser tests. TypeScript and Node typings provide strict checks; Playwright supplies isolated browser automation. The game and server have no runtime dependencies.
 
 `npm run balance -- 100 --all --report` includes every campaign stage. Generated findings are written to [docs/BALANCE.md](docs/BALANCE.md).
 

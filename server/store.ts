@@ -21,7 +21,7 @@ export class Store {
     if (this.data.version !== 1) throw new Error('Unsupported world database version.');
     return this;
   }
-  transaction<T>(operation: (draft: WorldData) => T | Promise<T>): Promise<T> {
+  transaction<T>(operation: (draft: WorldData) => T | Promise<T>, committed?: (result: T) => void): Promise<T> {
     const next = this.queue.then(async () => {
       const draft = structuredClone(this.data);
       const result = await operation(draft);
@@ -30,6 +30,7 @@ export class Store {
       await rename(this.file + '.tmp', this.file);
       this.data = draft;
       this.recovered = false;
+      committed?.(result);
       return result;
     });
     this.queue = next.catch(() => {});

@@ -37,6 +37,7 @@ export async function createAppServer({ root = '.', dataDir = '.data', publicOri
         rateLimit(request, ['/api/register', '/api/login'].includes(pathname));
         const token = (request.headers.cookie ?? '').split(';').map(p => p.trim()).find(p => p.startsWith('alchemy_session='))?.slice('alchemy_session='.length);
         if (request.method === 'GET') {
+          if (pathname === '/api/content') return json(200, service.content());
           if (pathname === '/api/status') return json(200, { available: true, contentVersion: CONTENT_VERSION, live: service.store.data.live });
           if (pathname === '/api/me') return json(200, service.me(token));
           if (pathname === '/api/world') return json(200, service.world(token));
@@ -58,9 +59,10 @@ export async function createAppServer({ root = '.', dataDir = '.data', publicOri
         if (pathname === '/api/battle/start') return json(200, await service.startBattle(token, body));
         if (pathname === '/api/battle/finish') return json(200, await service.finishBattle(token, body.battleId ?? ""));
         if (pathname === '/api/social') return json(200, await service.social(token, body.action ?? "", body.payload ?? {}));
-        if (pathname === '/api/admin/live' || pathname === '/api/admin/analytics') {
+        if (pathname === '/api/admin/live' || pathname === '/api/admin/analytics' || pathname === '/api/admin/content') {
           const supplied = request.headers.authorization?.replace(/^Bearer /, '') ?? '';
           if (!adminToken || Buffer.byteLength(supplied) !== Buffer.byteLength(adminToken) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(adminToken))) throw new ServiceError('Administrator authentication required.', 403);
+          if (pathname.endsWith('/content')) return json(200, await service.publishContent(body));
           return json(200, pathname.endsWith('/analytics') ? service.analytics() : await service.updateLive(body));
         }
         return json(404, { error: 'Endpoint not found.' });

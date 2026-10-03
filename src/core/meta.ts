@@ -3,7 +3,7 @@ import { VESSELS, VESSEL_BY_ID } from '../data/content.js';
 import { TALENTS, EQUIPMENT, SPECIALIZATIONS, QUESTS, ACHIEVEMENTS, PASSIVES, COSMETICS } from '../data/systems.js';
 
 export function metaDefaults(): MetaProgress {
-  return { activeDays: [new Date().toISOString().slice(0, 10)], createdAt: Date.now(), essence: 0, shards: 0, talents: [], equipment: [], evolution: {}, specializations: {}, quests: [], achievements: [], reactionWins: {}, discoveryDates: {}, runsWon: 0, endlessBest: 0, run: null, loadouts: [], cosmetics: ['observatory'], theme: 'observatory', analytics: [{ name: 'tutorial_started', at: Date.now() }], dailyClaims: [], highestChain: 0 };
+  return { vesselXp: {}, chains: [], creatures: [], activeDays: [new Date().toISOString().slice(0, 10)], createdAt: Date.now(), essence: 0, shards: 0, talents: [], equipment: [], evolution: {}, specializations: {}, quests: [], achievements: [], reactionWins: {}, discoveryDates: {}, runsWon: 0, endlessBest: 0, run: null, loadouts: [], cosmetics: ['observatory'], theme: 'observatory', analytics: [{ name: 'tutorial_started', at: Date.now() }], dailyClaims: [], highestChain: 0 };
 }
 export function talentModifier(player: Player, key: NumericModifier) {
   return TALENTS.filter(t => player.talents?.includes(t.id)).reduce((sum, t) => sum + (t.modifiers[key] ?? 0), 0);

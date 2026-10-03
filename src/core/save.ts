@@ -1,7 +1,9 @@
+import { validAbilities } from '../data/units.js';
+import { normalizeChains } from './codex.js';
 import type { Player, Loadout } from '../types.js';
 export type SaveStorage = Pick<Storage, 'getItem' | 'setItem'>;
 import { normalizeReplay } from './replay.js';
-import { REACTION_BY_ID, VESSEL_BY_ID, RESEARCH, ENCOUNTER_BY_ID } from '../data/content.js';
+import { REACTION_BY_ID, VESSEL_BY_ID, RESEARCH, ENCOUNTER_BY_ID, ENEMY_BY_ID } from '../data/content.js';
 import { createPlayer, unlockedRelics } from './progression.js';
 import { TALENTS, EQUIPMENT, SPECIALIZATIONS, QUESTS, ACHIEVEMENTS, PASSIVES, COSMETICS } from '../data/systems.js';
 import { normalizeRun } from './modes.js';
@@ -57,6 +59,7 @@ export function normalizeSave(value: unknown): Player {
     const fallback = VESSEL_BY_ID[slot.vessel];
     team.push({
       vessel: slot.vessel,
+      ...(validAbilities(slot.abilities, player.discoveries.length) ? { abilities: [...slot.abilities] } : {}),
       elements: Array.isArray(slot.elements) && slot.elements.length === 2 && slot.elements.every(id => player.owned.includes(id)) ? [...slot.elements] : [...fallback.elements],
       relic: allowedRelics.has(slot.relic) ? slot.relic : 'none',
       targeting: ['front', 'weakest', 'reaction'].includes(slot.targeting) ? slot.targeting : 'front',
@@ -69,6 +72,9 @@ export function normalizeSave(value: unknown): Player {
   for (const slot of createPlayer().team) if (!used.has(slot.vessel) && team.length < 5) team.push(slot);
   player.team = team;
   if (Array.isArray(raw.loadouts)) player.loadouts = raw.loadouts.filter(l => typeof l?.name === 'string' && Array.isArray(l.team) && l.team.length === 5 && new Set(l.team.map(s => s?.vessel)).size === 5 && l.team.every(s => s && VESSEL_BY_ID[s.vessel] && Array.isArray(s.elements) && s.elements.length === 2 && s.elements.every(id => player.owned.includes(id)))).slice(0, 10).map(l => ({ name: l.name.slice(0, 40), team: normalizeSave({ ...raw, team: l.team, loadouts: [], lastReplay: null }).team }));
+  player.vesselXp = Object.fromEntries(Object.entries(record(raw.vesselXp, id => Boolean(VESSEL_BY_ID[id]))).map(([id, xp]) => [id, Math.min(450, xp)]));
+  player.chains = normalizeChains(raw.chains);
+  player.creatures = list(raw.creatures, id => Boolean(ENEMY_BY_ID[id]), 1000);
   player.lastReplay = normalizeReplay(raw.lastReplay);
   return player;
 }

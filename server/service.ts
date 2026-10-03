@@ -1,3 +1,10 @@
+import { applyRelease, validateRelease } from '../src/core/releases.js';
+import type { ContentRelease } from '../src/core/releases.js';
+import { recordBattleCodex } from '../src/core/codex.js';
+import { ServiceError, requireThat } from './errors.js';
+export { ServiceError } from './errors.js';
+import { guildAction, guildContribution, guildView } from './guilds.js';
+import { competitionConfig, COMPETITIVE_MODES } from '../src/core/competition.js';
 import type { WorldData, User, Guild, BattleClaim, Session, WorldView, BattleRequest, SocialPayload, SocialResult, LiveConfig } from './types.js';
 import type { BattleConfig } from '../src/types.js';
 import { MUTATORS } from '../src/data/systems.js';
@@ -12,15 +19,13 @@ import { createPlayer, encounterUnlocked, claimBattle, validateTeam } from '../s
 import { executeCommand } from '../src/core/commands.js';
 import { makeBattleConfig, simulateBattle } from '../src/core/combat.js';
 import { runBattleConfig, completeRunBattle, rotation } from '../src/core/modes.js';
-import { CONTENT_VERSION, ELEMENT_BY_ID, REACTION_BY_ID, ENEMIES, REACTIONS } from '../src/data/content.js';
+import { CONTENT_VERSION, REACTION_BY_ID, ENEMIES, REACTIONS } from '../src/data/content.js';
 import { resolveExperiment } from '../src/core/reactions.js';
 import { track } from '../src/core/meta.js';
 
 const scrypt = promisify(scryptCallback);
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 const seed = () => randomBytes(4).readUInt32LE();
-export class ServiceError extends Error { status: number; constructor(message: string, status = 400) { super(message); this.status = status; } }
-function requireThat(condition: unknown, message: string, status?: number): asserts condition { if (!condition) throw new ServiceError(message, status); };
 const cleanName = (value: unknown, max = 40) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const sessionUser = (db: WorldData, token: string | undefined, now = Date.now()) => {
   const session = token && db.sessions[hash(token)];
@@ -30,6 +35,7 @@ const publicUser = (user: User) => ({ id: user.id, name: user.name, discoveries:
 
 export async function createService(directory: string) {
   const store = await new Store(directory).open();
+  for (const release of store.data.releases ?? []) applyRelease(release);
   for (const user of store.data.users) user.player = normalizeSave(user.player);
   function authenticated(db: WorldData, token: string | undefined) { const user = sessionUser(db, token); requireThat(user, 'Sign in to use the shared world.', 401); return user; }
   function snapshot(user: User) { return { account: publicUser(user), player: structuredClone(user.player) }; }
@@ -86,7 +92,12 @@ export async function createService(directory: string) {
           config = makeBattleConfig(user.player, encounterId, seed());
         } else if (['daily', 'weekly', 'festival'].includes(kind)) config = challengeConfig(user.player, kind);
         else if (kind === 'run') config = runBattleConfig(user.player);
-        else if (kind === 'pvp' || kind === 'guild-war' || kind === 'draft-pvp') {
+        else if (COMPETITIVE_MODES.includes(kind)) {
+          const opponent = db.users.find(u => u.id === opponentId);
+          requireThat(opponent && opponent.id !== user.id, 'Choose another alchemist.');
+          const fixedSeed = parseInt(hash([user.id, opponent.id].sort().join(':') + ':' + rotation().week).slice(0, 8), 16);
+          try { config = competitionConfig(createPlayer(), kind, draft ?? [], fixedSeed); } catch (error) { throw new ServiceError(error instanceof Error ? error.message : 'Invalid competition.'); }
+        } else if (kind === 'pvp' || kind === 'guild-war' || kind === 'draft-pvp') {
           const opponent = db.users.find(u => u.id === opponentId);
           requireThat(opponent && opponent.id !== user.id, 'Choose another alchemist.');
           if (kind === 'guild-war') requireThat(user.guildId && opponent.guildId && user.guildId !== opponent.guildId, 'Choose an alchemist from a rival guild.');
@@ -109,7 +120,7 @@ export async function createService(directory: string) {
           const boss = ENEMIES.filter(e => e.tags.includes('boss'))[week % 5];
           config = { ...makeBattleConfig(user.player, 'whispering-grove', seed()), encounter: { region: 'Guild', label: 'Raid', description: 'A shared guardian.', id: 'guild-raid', name: 'Guild Guardian · ' + boss.name, environment: 'storm', tip: 'Every point of damage contributes to your guild’s shared goal.', enemies: [boss.id], scale: 4, gold: 0, knowledge: 0, xp: 0 } };
         } else throw new ServiceError('Unknown battle mode.');
-        if (db.live.mutator && kind !== 'pvp' && kind !== 'guild-war' && kind !== 'draft-pvp') config.modifiers = mergeModifiers(config.modifiers, MUTATORS.find(m => m.id === db.live.mutator)?.modifiers);
+        if (db.live.mutator && !COMPETITIVE_MODES.includes(kind) && kind !== 'pvp' && kind !== 'guild-war' && kind !== 'draft-pvp') config.modifiers = mergeModifiers(config.modifiers, MUTATORS.find(m => m.id === db.live.mutator)?.modifiers);
         const battleId = randomUUID();
         db.battles[battleId] = { userId: user.id, config, kind, opponentId: opponentId ?? null, guildId: user.guildId, createdAt: Date.now(), claimed: false };
         track(user.player, 'battle_started', { kind, seed: config.seed });
@@ -158,6 +169,22 @@ export async function createService(directory: string) {
             result.raidDamage = battle.report.totalDamage;
           }
         }
+        if (COMPETITIVE_MODES.includes(pending.kind)) {
+          const week = rotation(pending.createdAt).week;
+          if (week === rotation().week) {
+            if (user.competition?.week !== week) user.competition = { week, elementScore: 0, weeklyScore: 0, claims: [] };
+            const key = pending.kind + ':' + pending.opponentId;
+            if (!user.competition.claims.includes(key)) {
+              user.competition.claims.push(key);
+              const metric = pending.kind === 'element-wars' ? 'elementScore' : 'weeklyScore';
+              user.competition[metric] += battle.outcome === 'victory' ? 3 : battle.outcome === 'draw' ? 1 : 0;
+              if (battle.outcome === 'victory') user.player.gold += 15;
+            }
+          }
+        }
+        const memberGuild = db.guilds.find(g => g.id === pending.guildId && g.id === user.guildId);
+        if (memberGuild && battle.outcome === 'victory' && rotation(pending.createdAt).week === rotation().week) guildContribution(memberGuild, user, 'battles');
+        recordBattleCodex(user.player, battle);
         user.player.lastReplay = structuredClone(pending.config);
         pending.claimed = true; pending.result = result;
         return { result, ...snapshot(user) };
@@ -165,14 +192,17 @@ export async function createService(directory: string) {
     },
     world(token?: string): WorldView {
       const user = authenticated(store.data, token), db = store.data;
-      return { self: publicUser(user), players: db.users.map(publicUser).sort((a, b) => b.rating - a.rating).slice(0, 100), friends: user.friends, requests: user.requests, guilds: db.guilds.map(g => ({ ...g })), challenges: db.challenges.map(c => ({ id: c.id, name: c.name, author: db.users.find(u => u.id === c.author)?.name, allowed: c.allowed, targetName: ELEMENT_BY_ID[c.target].name, solved: user.challengeClaims.includes(c.id) })), shares: db.shares.slice(-30).reverse().map(s => ({ id: s.id, author: db.users.find(u => u.id === s.author)?.name, at: s.at })), live: db.live, rotation: rotation() };
+      return { self: publicUser(user), players: db.users.map(publicUser).sort((a, b) => b.rating - a.rating).slice(0, 100), friends: user.friends, requests: user.requests, guilds: db.guilds.map(g => guildView(g, user)), standings: { elementWars: db.users.map(u => ({ id: u.id, name: u.name, score: u.competition?.week === rotation().week ? u.competition.elementScore : 0 })).sort((a,b) => b.score - a.score), weekly: db.users.map(u => ({ id: u.id, name: u.name, score: u.competition?.week === rotation().week ? u.competition.weeklyScore : 0 })).sort((a,b) => b.score - a.score) }, challenges: db.challenges.map(c => ({ id: c.id, name: c.name, author: db.users.find(u => u.id === c.author)?.name, allowed: c.allowed, targetName: REACTION_BY_ID[c.target].name, solved: user.challengeClaims.includes(c.id) })), shares: db.shares.slice(-30).reverse().map(s => ({ id: s.id, author: db.users.find(u => u.id === s.author)?.name, at: s.at })), live: db.live, rotation: rotation() };
     },
     async social(token: string | undefined, action: string, value: unknown = {}) {
       const payload = value as SocialPayload;
       return store.transaction(db => {
         const user = authenticated(db, token);
         let result: SocialResult = { ok: true };
-        if (action === 'friend-request') {
+        if (['guild-element-donate', 'guild-element-claim', 'guild-experiment', 'guild-mission'].includes(action)) {
+          const guild = db.guilds.find(g => g.id === user.guildId); requireThat(guild, 'Join a guild first.');
+          result = guildAction(guild, user, action, payload);
+        } else if (action === 'friend-request') {
           const other = db.users.find(u => u.id === (payload.id ?? ''));
           requireThat(other && other.id !== user.id, 'Alchemist not found.');
           if (!other.requests.includes(user.id) && !other.friends.includes(user.id)) other.requests.push(user.id);
@@ -219,22 +249,39 @@ export async function createService(directory: string) {
           requireThat(!db.challenges.some(c => c.author === user.id && c.name === name), 'You already created a challenge with that name.');
           let reachable = new Set(allowed), changed = true;
           while (changed) { changed = false; for (const r of REACTIONS) if (!r.conditions && r.inputs.every(id => reachable.has(id)) && !reachable.has(r.output)) { reachable.add(r.output); changed = true; } }
-          requireThat(reachable.has((payload.target ?? '')) && !allowed.includes((payload.target ?? '')), 'That target cannot be constructed from these starting elements.');
+          const targetRule = REACTION_BY_ID[payload.target ?? ''];
+          requireThat(targetRule && !targetRule.conditions && targetRule.inputs.every(id => reachable.has(id)) && !allowed.includes(targetRule.output), 'That target cannot be constructed from these starting elements.');
           requireThat(db.challenges.filter(c => c.author === user.id).length < 20, 'You can publish up to twenty challenges.');
           db.challenges.push({ id: randomUUID(), name, author: user.id, target: (payload.target ?? ''), allowed, at: Date.now() });
         } else if (action === 'challenge-solve') {
           const challenge = db.challenges.find(c => c.id === (payload.id ?? '')); requireThat(challenge, 'Challenge not found.');
           requireThat(Array.isArray(payload.steps) && payload.steps.length <= 12, 'Submit at most twelve experiment steps.');
-          const available = new Set(challenge.allowed);
+          const available = new Set(challenge.allowed), performed = new Set<string>();
           for (const step of payload.steps) {
             requireThat(Array.isArray(step) && step.length === 2 && step.every(id => available.has(id)), 'The solution uses an unavailable element.');
-            const rule = resolveExperiment(step[0], step[1]); requireThat(rule, 'A step has no stable reaction.'); available.add(rule.output);
+            const rule = resolveExperiment(step[0], step[1]); requireThat(rule, 'A step has no stable reaction.'); available.add(rule.output); performed.add(rule.id);
           }
-          requireThat(available.has(challenge.target), 'The solution did not reach the target.');
+          requireThat(performed.has(challenge.target), 'The solution did not reach the target.');
           if (!user.challengeClaims.includes(challenge.id)) { user.challengeClaims.push(challenge.id); user.player.xp += 20; user.player.knowledge += 3; }
         } else throw new ServiceError('Unknown community action.');
         return { result, ...snapshot(user) };
       });
+    },
+    content() { return { version: CONTENT_VERSION, releases: structuredClone(store.data.releases ?? []) }; },
+    async publishContent(value: unknown) {
+      return store.transaction(db => {
+        requireThat(!db.live.enabled, 'Enable maintenance before publishing a release.');
+        prune(db);
+        requireThat(!Object.values(db.battles).some(b => !b.claimed), 'Finish outstanding battles before publishing content.');
+        const issues = validateRelease(value);
+        requireThat(!issues.length, issues.join(' '));
+        const release = structuredClone(value) as ContentRelease;
+        requireThat(!(db.releases ?? []).some(r => r.pack.id === release.pack.id && r.pack.version >= release.pack.version), 'Increase the release version.');
+        requireThat((db.releases?.length ?? 0) < 100, 'Archive releases into the next file distribution before publishing more.');
+        db.releases = [...(db.releases ?? []), release];
+        db.live.revision++;
+        return release;
+      }, release => applyRelease(release));
     },
     analytics() {
       const now = Date.now(), users = store.data.users;

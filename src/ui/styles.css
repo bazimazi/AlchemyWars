@@ -710,3 +710,20 @@ dialog h2 { font-size: 31px; margin-top: 10px; }
 .mastery-variant { outline: 2px double var(--element); outline-offset: 4px; box-shadow: 0 0 24px color-mix(in srgb, var(--element) 28%, transparent); }
 
 @media (max-width: 700px) { .small-button, .vessel-top .icon-button { min-height: 44px; min-width: 44px; } }
+
+.relationship-count { margin: 0; padding: 0 10px 8px; font-size: .7rem; color: var(--muted); text-align: center; }
+.codex-tabs { flex-wrap: wrap; }
+.codex-grid .content-panel > svg { width: 100%; height: 130px; }
+
+.unit-sprite[data-motion="sway"] svg { animation: vessel-sway var(--idle-duration) ease-in-out infinite; }
+.unit-sprite[data-motion="hover"] svg { animation: vessel-hover var(--idle-duration) ease-in-out infinite; }
+.unit-sprite[data-motion="pulse"] svg { animation: vessel-pulse var(--idle-duration) ease-in-out infinite; }
+.unit-sprite[data-motion="cast"] svg { animation: vessel-cast .45s ease-out; }
+@keyframes vessel-sway { 50% { transform: rotate(3deg) translateY(calc(-1 * var(--idle-lift))); } }
+@keyframes vessel-hover { 50% { transform: translateY(calc(-1 * var(--idle-lift))); } }
+@keyframes vessel-pulse { 50% { transform: scale(1.04) translateY(calc(-1 * var(--idle-lift))); } }
+@keyframes vessel-cast { 50% { transform: translateX(var(--cast-reach)) scale(1.08); } }
+.fallen .unit-sprite svg, .reduced-motion .unit-sprite svg { animation: none; }
+@media (prefers-reduced-motion: reduce) { .unit-sprite svg { animation: none !important; } }
+
+.unit-sprite[data-motion]:not([data-motion="cast"]) svg { animation-delay: var(--idle-delay, 0s); }

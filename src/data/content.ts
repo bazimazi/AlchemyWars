@@ -1,3 +1,4 @@
+import { MYTHIC_REACTIONS, CONTINUATIONS } from './continuations.js';
 import type { ElementRow, Effect, ReactionDefinition, ReactionDraft, ElementDefinition, StatusDefinition, UnitDefinition, Relic, Research, Encounter } from '../types.js';
 // Content is separate from the engine. Every effect is interpreted by a reusable primitive.
 import { ADVANCED_ELEMENTS, EXTRA_REACTIONS, EXTRA_VESSELS, EXTRA_ENEMIES, EXTRA_BOSSES, CAMPAIGN_STAGES } from './expansion.js';
@@ -6,7 +7,7 @@ const status = (id: string, duration: number, intensity = 1, extra: { recipient?
 const damage = (scale: number, extra: { recipient?: Effect["recipient"]; stacks?: number } = {}): Effect => ({ type: 'damage', scale, ...extra });
 const chain = (scale: number, count = 2): Effect => ({ type: 'chain', scale, count, status: 'shock', element: 'lightning' });
 
-export let CONTENT_VERSION = '0.3.0';
+export let CONTENT_VERSION = '0.4.0';
 export function setContentVersion(version: string) { CONTENT_VERSION = version; }
 export const BALANCE = {
   step: 0.25, maxTime: 90, maxChainDepth: 4, maxEventsPerAction: 80,
@@ -53,7 +54,7 @@ export const REACTIONS: ReactionDefinition[] = ([
   { id: 'thunderstorm', name: 'Thunderstorm', inputs: ['storm-cloud', 'lightning'], category: 'Environment', rarity: 'Rare', color: '#b7b5f1', icon: 'bolt', tags: ['weather', 'chain'], hint: 'A cloud waits for the sky to speak.', description: 'Lightning leaps between three enemies and disrupts them.', effects: [damage(0.55), chain(0.6, 3)] },
   { id: 'thermal-shock', name: 'Thermal Shock', inputs: ['fire', 'water'], category: 'Conditional', rarity: 'Rare', color: '#e9bdb0', icon: 'burst', tags: ['heat', 'cold'], conditions: { statuses: ['freeze'] }, priority: 10, hint: 'What happens when a frozen foe meets sudden heat?', description: 'When the target is frozen, sudden heat shatters it for heavy damage.', effects: [damage(1.5), status('vulnerable', 5, 0.35)] },
   { id: 'storm-surge', name: 'Storm Surge', inputs: ['lightning', 'water'], category: 'Conditional', rarity: 'Rare', color: '#abcaee', icon: 'bolt', tags: ['weather', 'electricity'], conditions: { environment: 'rain' }, priority: 10, hint: 'Rain gives a wandering spark a thousand paths.', description: 'During rain, electricity reaches three additional enemies.', effects: [damage(0.3), chain(0.65, 3)] },
-  ...EXTRA_REACTIONS,
+  ...EXTRA_REACTIONS, ...MYTHIC_REACTIONS,
 ] satisfies ReactionDraft[]).map(r => ({ ...meta, output: r.id, rarity: 'Common', priority: 0, cooldown: BALANCE.reactionCooldown, trigger: 'OnElementApplied', ...r }));
 
 export const ELEMENTS: ElementDefinition[] = [
@@ -62,6 +63,11 @@ export const ELEMENTS: ElementDefinition[] = [
   ...REACTIONS.map(r => ({ ...meta, id: r.output, name: r.name, color: r.color, icon: r.icon, tags: r.tags, role: r.category, description: r.description, lore: `A relationship between ${r.inputs.map(id => baseElements.find(e => e[0] === id)?.[1] ?? id.replaceAll('-', ' ')).join(' and ')}. ${r.description}`, rarity: r.rarity, tier: r.inputs.some(id => !baseElements.some(e => e[0] === id)) ? 3 : 2, affinity: r.inputs[0], power: 0.85, effects: r.effects, base: false })),
 ];
 export const ELEMENT_BY_ID: Record<string, ElementDefinition> = Object.assign(Object.create(null), Object.fromEntries(ELEMENTS.map(e => [e.id, e])));
+// Continuations reuse existing elemental identities while retaining unique recipe IDs.
+for (const [id, a, b, output, hint] of CONTINUATIONS) {
+  const element = ELEMENT_BY_ID[output];
+  REACTIONS.push({ ...meta, id, name: element.name + ' (' + id.replaceAll('-', ' ') + ')', inputs: [a, b], output, category: 'Continuation', color: element.color, icon: element.icon, tags: [...element.tags], hint, description: hint, rarity: 'Rare', priority: 0, cooldown: BALANCE.reactionCooldown, trigger: 'OnElementApplied', effects: structuredClone(element.effects) });
+}
 export const REACTION_BY_ID: Record<string, ReactionDefinition> = Object.assign(Object.create(null), Object.fromEntries(REACTIONS.map(r => [r.id, r])));
 
 export const STATUSES: Record<string, StatusDefinition> = Object.fromEntries(([

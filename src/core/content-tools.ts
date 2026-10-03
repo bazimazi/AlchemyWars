@@ -100,7 +100,6 @@ export function validatePack(input: unknown): string[] {
     }
     if (kind === 'elements' && (!number(e.power, 0, 5) || !number(e.tier, 1, 100) || !Number.isInteger(e.tier) || typeof e.base !== 'boolean' || typeof e.role !== 'string' || typeof e.lore !== 'string' || typeof e.affinity !== 'string')) issues.push(e.id + ': invalid element metadata, power or tier.');
     if (kind === 'reactions') {
-      if (e.id !== e.output) issues.push(e.id + ': reaction id must match its derived output element.');
       if (!strings(e.inputs) || e.inputs.length !== 2 || e.inputs.some(id => !has('elements', id)) || !has('elements', e.output)) issues.push(e.id + ': recipe inputs/output must reference defined elements.');
       if (!number(e.priority, 0) || !number(e.cooldown, 0, 90) || typeof e.hint !== 'string' || typeof e.category !== 'string' || e.trigger !== 'OnElementApplied') issues.push(e.id + ': priority, cooldown, hint, category and trigger are required.');
       if (e.conditions !== undefined) {

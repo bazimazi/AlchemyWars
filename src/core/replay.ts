@@ -1,3 +1,4 @@
+import { validAbilities } from '../data/units.js';
 import type { BattleConfig, Loadout } from '../types.js';
 import { CONTENT_VERSION, ELEMENT_BY_ID, VESSEL_BY_ID, RELIC_BY_ID, ENEMY_BY_ID, ENCOUNTER_BY_ID, RESEARCH, REACTION_BY_ID, STATUSES } from '../data/content.js';
 import { TALENTS, PASSIVES, EQUIPMENT, SPECIALIZATIONS, ENVIRONMENTS, BOSS_AFFIXES } from '../data/systems.js';
@@ -8,7 +9,7 @@ function team(value: unknown): Loadout[] {
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > 5 || new Set(raw.map(s => s?.vessel)).size !== raw.length) throw new Error();
   return raw.map(s => {
     if (!s || !VESSEL_BY_ID[s.vessel] || !RELIC_BY_ID[s.relic] || !Array.isArray(s.elements) || s.elements.length !== 2 || s.elements.some(id => !ELEMENT_BY_ID[id])) throw new Error();
-    return { vessel: s.vessel, elements: [...s.elements], relic: s.relic, targeting: ['front', 'weakest', 'reaction'].includes(s.targeting) ? s.targeting : 'front', priority: ['core', 'alternate', 'reaction'].includes(s.priority) ? s.priority : 'reaction', ...(s.passive ? { passive: PASSIVES.some(p => p.id === s.passive) ? s.passive : 'none' } : {}), ...(s.equipment ? { equipment: Object.fromEntries(Object.entries(s.equipment).filter(([slot, id]) => EQUIPMENT.some(e => e.slot === slot && e.id === id))) } : {}), ...(Array.isArray(s.reactionPriority) ? { reactionPriority: s.reactionPriority.filter(id => REACTION_BY_ID[id]).slice(0, 10) } : {}) };
+    return { ...(validAbilities(s.abilities) ? { abilities: [...s.abilities] } : {}), vessel: s.vessel, elements: [...s.elements], relic: s.relic, targeting: ['front', 'weakest', 'reaction'].includes(s.targeting) ? s.targeting : 'front', priority: ['core', 'alternate', 'reaction'].includes(s.priority) ? s.priority : 'reaction', ...(s.passive ? { passive: PASSIVES.some(p => p.id === s.passive) ? s.passive : 'none' } : {}), ...(s.equipment ? { equipment: Object.fromEntries(Object.entries(s.equipment).filter(([slot, id]) => EQUIPMENT.some(e => e.slot === slot && e.id === id))) } : {}), ...(Array.isArray(s.reactionPriority) ? { reactionPriority: s.reactionPriority.filter(id => REACTION_BY_ID[id]).slice(0, 10) } : {}) };
   });
 }
 export function normalizeReplay(value: unknown): BattleConfig | null {
@@ -16,6 +17,7 @@ export function normalizeReplay(value: unknown): BattleConfig | null {
   try {
     if (!raw || raw.contentVersion !== CONTENT_VERSION || !Number.isInteger(raw.seed)) return null;
     const config: BattleConfig = { contentVersion: CONTENT_VERSION, seed: raw.seed >>> 0, encounterId: raw.encounterId, team: team(raw.team), research: RESEARCH.filter(r => raw.research?.includes(r.id)).map(r => r.id), talents: TALENTS.filter(t => raw.talents?.includes(t.id)).map(t => t.id), mastery: {}, evolution: {}, specializations: {} };
+    if (raw.vesselXp) config.vesselXp = Object.fromEntries(Object.entries(raw.vesselXp).filter(([id, xp]) => VESSEL_BY_ID[id] && numeric(xp, 450)));
     for (const [id, n] of Object.entries(raw.mastery ?? {})) if (ELEMENT_BY_ID[id] && numeric(n, 1e9)) config.mastery[id] = n;
     for (const [id, n] of Object.entries(raw.evolution ?? {})) if (ELEMENT_BY_ID[id] && numeric(n, 3)) config.evolution![id] = n;
     for (const [id, specialization] of Object.entries(raw.specializations ?? {})) if (ELEMENT_BY_ID[id] && SPECIALIZATIONS.some(s => s.id === specialization)) config.specializations![id] = specialization;

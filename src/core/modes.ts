@@ -1,3 +1,4 @@
+import { recordBattleCodex } from './codex.js';
 import type { Player, BattleResult, BattleConfig, Run, RunReward, Encounter } from '../types.js';
 import { CONTENT_VERSION, ELEMENTS, ELEMENT_BY_ID, REACTIONS, ENEMIES, VESSELS } from '../data/content.js';
 import { RUN_UPGRADES, MUTATORS, BOSS_AFFIXES } from '../data/systems.js';
@@ -61,7 +62,8 @@ export function completeRunBattle(player: Player, battle: BattleResult) {
   const run = player.run;
   if (!run || run.state !== 'battle' || battle.config.encounterId !== runEncounter(run).id || battle.config.seed !== (run.seed + run.floor * 1237) >>> 0) return false;
   run.health = battle.final.units.filter(u => u.side === 'ally').slice(0, 5).map(u => u.hp / u.maxHp);
-  for (const id of Object.keys(battle.report.reactions)) if (!run.discoveries.includes(id) && REACTIONS.some(r => r.id === id)) { run.discoveries.push(id); if (!run.elements.includes(id)) run.elements.push(id); }
+  for (const id of Object.keys(battle.report.reactions)) if (!run.discoveries.includes(id) && REACTIONS.some(r => r.id === id)) { run.discoveries.push(id); const output = REACTIONS.find(r => r.id === id)!.output; if (!run.elements.includes(output)) run.elements.push(output); }
+  recordBattleCodex(player, battle);
   player.highestChain = Math.max(player.highestChain, battle.report.highestChain);
   if (battle.outcome !== 'victory') { run.state = 'defeat'; finalizeRun(player); return true; }
   run.wins++;

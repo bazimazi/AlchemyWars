@@ -1,0 +1,34 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createService } from '../server/service.js';
+import { contentTemplate } from '../src/core/content-tools.js';
+import { BALANCE, CONTENT_VERSION, ELEMENT_BY_ID } from '../src/data/content.js';
+
+test('live releases validate, wait for battles, persist and activate without restart', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'alchemy-release-test-'));
+  t.after(async () => { assert.ok(directory.startsWith(join(tmpdir(), 'alchemy-release-test-'))); await rm(directory, { recursive: true, force: true }); });
+  const service = await createService(directory), account = await service.register('Release_Tester', 'test-only-password-123');
+  const release = { pack: { id: 'test-season', version: 1, elements: [{ ...contentTemplate('elements'), id: 'season-aether' }] }, balance: { criticalChance: .1 } };
+  await assert.rejects(service.publishContent(release), /maintenance/);
+  const fight = await service.startBattle(account.token, { encounterId: 'whispering-grove' });
+  await service.updateLive({ enabled: false, announcements: [] });
+  await assert.rejects(service.publishContent(release), /outstanding battles/);
+  await service.finishBattle(account.token, fight.battleId);
+  const before = CONTENT_VERSION;
+  await assert.rejects(service.publishContent({ ...release, balance: { maxEventsPerAction: 1e9 } }), /bounds/);
+  await assert.rejects(service.publishContent({ ...release, balance: { constructor: 1 } }), /bounds/);
+  assert.equal(CONTENT_VERSION, before); assert.equal(ELEMENT_BY_ID['season-aether'], undefined);
+  await service.publishContent(release);
+  assert.ok(ELEMENT_BY_ID['season-aether']); assert.equal(BALANCE.criticalChance, .1);
+  assert.ok(service.content().version.endsWith('+test-season.1'));
+  assert.equal(service.content().releases.length, 1);
+  await assert.rejects(service.publishContent(release), /version/);
+  const reopened = await createService(directory);
+  assert.deepEqual(reopened.content(), service.content());
+  assert.equal(BALANCE.criticalChance, .1);
+  await reopened.updateLive({ enabled: true, announcements: [] });
+  assert.equal((await reopened.startBattle(account.token, { encounterId: 'whispering-grove' })).config.contentVersion, service.content().version);
+});

@@ -1,4 +1,76 @@
 import { test, expect } from '@playwright/test';
+test('new codex sections, continuation recipes and ability slots survive reload', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/#lab');
+  await page.evaluate(async () => {
+    const { createPlayer, experiment } = await import('/src/core/progression.js');
+    const player = createPlayer();
+    experiment(player, 'fire', 'nature'); experiment(player, 'wildfire', 'water');
+    localStorage.setItem('alchemy-wars.save.v1', JSON.stringify(player));
+  });
+  await page.goto('/#team'); await page.reload();
+  await page.locator('select[data-x-select="ability"][data-index="0"][data-rank="0"]').selectOption('ward');
+  await page.reload();
+  await expect(page.locator('select[data-x-select="ability"][data-index="0"][data-rank="0"]')).toHaveValue('ward');
+  await page.goto('/#battle'); await page.getByRole('button', { name: 'Begin expedition' }).click();
+  await page.getByRole('button', { name: 'Skip to report' }).click();
+  await page.goto('/#codex');
+  await expect(page.locator('.codex-card').first()).toContainText('unknown relationships');
+  for (const tab of ['Creatures', 'Artifacts', 'Chains', 'Lore', 'Reactions']) {
+    await page.getByRole('button', { name: tab, exact: true }).click();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), tab).toBe(true);
+    if (tab === 'Creatures') await expect(page.getByRole('heading', { name: 'Moss Slime' })).toBeVisible();
+    if (tab === 'Reactions') await expect(page.getByRole('button', { name: /Steam \(quench wildfire\)/ })).toBeVisible();
+  }
+  await page.getByRole('button', { name: 'Creatures', exact: true }).click();
+  await page.screenshot({ path: 'test-results/codex-expanded-' + info.project.name + '.png', fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test('guild projects and Element Wars work through the Assembly controls', async ({ page, request }, info) => {
+  const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+  const name = 'Expansion' + info.project.name[0] + Date.now().toString(36);
+  expect((await request.post('/api/register', { data: { name: name + 'R', password: 'Synthetic-password-123' } })).ok()).toBe(true);
+  await page.goto('/#community');
+  await page.locator('#account-name').fill(name); await page.locator('#account-password').fill('Synthetic-password-123');
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();
+  await page.locator('#guild-name').fill(name + 'Guild'); await page.getByRole('button', { name: 'Create guild', exact: true }).click();
+  await page.locator('#guild-project-a').selectOption('fire'); await page.locator('#guild-project-b').selectOption('water');
+  await page.getByRole('button', { name: 'Contribute experiment', exact: true }).click();
+  await expect(page.locator('section').filter({ has: page.getByRole('heading', { name: 'Hidden reaction project' }) })).toContainText('1 / 20 contributions');
+  const pool = await page.locator('#element-wars-draft option').evaluateAll(nodes => nodes.slice(0, 2).map(n => (n as HTMLOptionElement).value));
+  await page.locator('#element-wars-draft').selectOption(pool);
+  await page.getByRole('button', { name: 'Enter Element Wars', exact: true }).click();
+  await expect(page.locator('.arena')).toBeVisible(); await page.getByRole('button', { name: 'Skip to report' }).click();
+  await expect(page.locator('.report')).toBeVisible();
+  await page.goto('/#community');
+  await expect(page.getByRole('heading', { name: 'Weekly Crucible', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('published definitions are installed before commands and cached for offline reload', async ({ page, context }) => {
+  await page.goto('/#lab');
+  const data = await page.evaluate(async () => {
+    const { contentTemplate } = await import('/src/core/content-tools.js');
+    const { CONTENT_VERSION } = await import('/src/data/content.js');
+    return { version: CONTENT_VERSION + '+browser-release.1', releases: [{ pack: { id: 'browser-release', version: 1,
+      elements: [{ ...contentTemplate('elements'), id: 'remote-aether', name: 'Remote Aether' }],
+      reactions: [{ ...contentTemplate('reactions'), id: 'remote-aether', output: 'remote-aether', name: 'Remote Aether' }] }, balance: { criticalChance: .1 } }] };
+  });
+  await page.route('**/api/content', route => route.fulfill({ json: data }));
+  await page.reload();
+  await page.getByRole('button', { name: 'Select Wind', exact: true }).click();
+  await page.getByRole('button', { name: 'Select Light', exact: true }).click();
+  await page.getByRole('button', { name: 'Combine elements' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Remote Aether');
+  await page.getByRole('button', { name: /Close dialog/ }).click();
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await page.unroute('**/api/content');
+  await context.setOffline(true); await page.reload();
+  await expect(page.getByRole('button', { name: 'Select Remote Aether', exact: true })).toBeVisible();
+  await context.setOffline(false);
+});
 test('discover, equip, battle, save and replay without console errors', async ({ page }, info) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');

@@ -1,3 +1,5 @@
+import { ObjectPool } from './pool.js';
+import { ABILITIES, VESSEL_PROFILES, vesselLevel, validAbilities } from '../data/units.js';
 import type { Player, BattleConfig, CombatUnit, BattleEvent, BattleFrame, BattleReport, BattleResult, Effect, UnitDefinition, Loadout, Side, StatusModifier, Specialization, ChainContext, ElementApplication, ReactionDefinition } from '../types.js';
 import { BALANCE, CONTENT_VERSION, ELEMENT_BY_ID, VESSEL_BY_ID, ENEMY_BY_ID, ENCOUNTER_BY_ID, RELIC_BY_ID, RESEARCH, STATUSES } from '../data/content.js';
 import { reactionEngine } from './reactions.js';
@@ -19,7 +21,7 @@ export function makeBattleConfig(player: Player, encounterId: string, seed: numb
   return {
     contentVersion: CONTENT_VERSION, seed: seed >>> 0, encounterId,
     team: structuredClone(player.team), research: [...player.research],
-    mastery: { ...player.mastery },
+    mastery: { ...player.mastery }, vesselXp: { ...player.vesselXp },
     talents: [...player.talents], evolution: { ...player.evolution }, specializations: { ...player.specializations },
   };
 }
@@ -35,6 +37,7 @@ function validateConfig(config: BattleConfig) {
     if (!VESSEL_BY_ID[slot.vessel] || ids.has(slot.vessel)) throw new Error('Invalid or duplicate vessel.');
     ids.add(slot.vessel);
     if (!Array.isArray(slot.elements) || slot.elements.length !== 2 || slot.elements.some(id => !ELEMENT_BY_ID[id]?.enabled)) throw new Error('Invalid element loadout.');
+    if (slot.abilities !== undefined && !validAbilities(slot.abilities)) throw new Error('Invalid ability slots.');
     if (!RELIC_BY_ID[slot.relic]) throw new Error('Unknown relic.');
   }
 }
@@ -46,7 +49,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
   const rng = seededRandom(config.seed);
   const encounter = config.encounter ?? ENCOUNTER_BY_ID[config.encounterId];
   const environment = ENVIRONMENTS[encounter.environment] ?? ENVIRONMENTS.neutral;
-  const accountModifiers = config.normalized ? {} : mergeModifiers(...RESEARCH.filter(r => config.research?.includes(r.id)).map(r => r.modifiers), ...TALENTS.filter(t => config.talents?.includes(t.id)).map(t => t.modifiers), config.modifiers);
+  const accountModifiers = config.normalized ? mergeModifiers(config.modifiers) : mergeModifiers(...RESEARCH.filter(r => config.research?.includes(r.id)).map(r => r.modifiers), ...TALENTS.filter(t => config.talents?.includes(t.id)).map(t => t.modifiers), config.modifiers);
   const masteryLevels = config.normalized ? {} : Object.fromEntries(Object.entries(config.mastery ?? {}).map(([id, xp]) => [id, Math.min(10, Math.floor(xp / BALANCE.masteryThreshold))]));
   const evolution = (id: string) => config.normalized ? 0 : config.evolution?.[id] ?? 0;
   const specialization = (id: string): Partial<Specialization> => config.normalized ? {} : SPECIALIZATIONS.find(s => s.id === config.specializations?.[id]) ?? {};
@@ -54,12 +57,13 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
   let time = 0;
   const events: BattleEvent[] = [];
   const frames: BattleFrame[] = [];
-  const triggerQueue: Omit<BattleEvent, "time">[] = [];
+  const triggerPool = new ObjectPool<Partial<BattleEvent>>(() => ({}), value => { for (const key of Object.keys(value) as (keyof BattleEvent)[]) delete value[key]; });
+  const triggerQueue: Partial<BattleEvent>[] = [];
   const triggerNames: Record<string, string> = { start: 'OnBattleStart', end: 'OnBattleEnd', cast: 'OnAbilityCast', critical: 'OnCritical', hit: 'OnHit', status: 'OnStatusApplied', expired: 'OnStatusExpired', damage: 'OnDamageTaken', death: 'OnDeath', kill: 'OnKill', element: 'OnElementApplied', reaction: 'OnReaction', reactionChain: 'OnReactionChain', lowHealth: 'OnLowHealth' };
-  const report: BattleReport = { damageByElement: {}, damageByUnit: {}, damageByReaction: {}, reactions: {}, reactionDamage: 0, totalDamage: 0, healing: 0, highestChain: 0, decisions: 0, guardedEvents: 0 };
+  const report: BattleReport = { chains: [], damageByElement: {}, damageByUnit: {}, damageByReaction: {}, reactions: {}, reactionDamage: 0, totalDamage: 0, healing: 0, highestChain: 0, decisions: 0, guardedEvents: 0 };
   const emit = (type: string, fields: Partial<BattleEvent> = {}) => {
     if (events.length < BALANCE.maxLogEvents) events.push({ time, type, ...fields });
-    if (triggerNames[type]) triggerQueue.push({ trigger: triggerNames[type], type, ...fields });
+    if (triggerNames[type]) triggerQueue.push(Object.assign(triggerPool.acquire(), { trigger: triggerNames[type], type }, fields));
   };
   function addUnit(definition: UnitDefinition, side: Side, position: number, slot: Partial<Loadout> = {}): CombatUnit {
     const scale = side === 'enemy' ? encounter.scale ?? 1 : 1;
@@ -70,12 +74,14 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       armor: definition.armor, interval: definition.interval,
       elements: [...(slot.elements ?? definition.elements)], relic: slot.relic ?? 'none',
       targeting: slot.targeting ?? 'front', priority: slot.priority ?? 'reaction',
-      passive: slot.passive ?? 'none', equipment: slot.equipment ?? {}, reactionPriority: slot.reactionPriority ?? [],
-      modifiers: mergeModifiers(environment.modifiers, side === 'ally' ? accountModifiers : {}, RELIC_BY_ID[slot.relic ?? 'none'].modifiers, ...EQUIPMENT.filter(e => Object.values(slot.equipment ?? {}).includes(e.id)).map(e => e.modifiers)),
+      abilities: [...(slot.abilities ?? [])], passive: slot.passive ?? 'none', equipment: slot.equipment ?? {}, reactionPriority: slot.reactionPriority ?? [],
+      modifiers: mergeModifiers(environment.modifiers, side === 'ally' ? accountModifiers : config.normalized ? accountModifiers : {}, RELIC_BY_ID[slot.relic ?? 'none'].modifiers, ...EQUIPMENT.filter(e => Object.values(slot.equipment ?? {}).includes(e.id)).map(e => e.modifiers)),
       shield: 0,
       statuses: {}, residues: {}, cooldowns: {}, ready: 0.4 + position * 0.3,
       casts: 0, phase: 0, definition,
     };
+    const growth = VESSEL_PROFILES[definition.id]?.growth, level = side === 'ally' && !config.normalized ? vesselLevel(config.vesselXp?.[definition.id]) - 1 : 0;
+    if (growth && level) { unit.hp = unit.maxHp += growth.hp * level * BALANCE.healthMultiplier; unit.attack += growth.attack * level; unit.armor += growth.armor * level; }
     const affix = side === 'enemy' && definition.tags?.includes('boss') ? BOSS_AFFIXES.find(a => a.id === encounter.affix) : null;
     if (affix) { unit.hp = unit.maxHp = Math.round(unit.maxHp * affix.health); unit.attack *= affix.attack; unit.interval *= affix.interval; unit.armor *= affix.armor; }
     unit.shield = unit.modifiers.startingShield ?? 0;
@@ -255,7 +261,9 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       if (actor.side === 'ally') report.reactions[rule.id] = (report.reactions[rule.id] ?? 0) + 1;
       emit('reaction', { source: actor.id, target: victim.id, id: rule.id, name: rule.name, element: rule.output, depth });
       if (depth > 1) emit('reactionChain', { source: actor.id, target: victim.id, depth, element: rule.output });
-      const next = { ...context, depth };
+      const path = [...(context.path ?? []), rule.id];
+      if (actor.side === 'ally' && path.length > 1 && report.chains.length < 100 && !report.chains.some(p => p.join('|') === path.join('|'))) report.chains.push(path);
+      const next = { ...context, depth, path };
       applyEffects(rule.effects, actor, victim, rule.output, next, queue, rule.id);
       queue.push({ source: actor, target: victim, element: rule.output, context: next });
     }
@@ -267,7 +275,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
     let count = 0;
     while (triggerQueue.length && count++ < BALANCE.maxEventsPerAction) {
       const event = triggerQueue.shift()!;
-      const ownerId = ['damage', 'expired', 'death', 'lowHealth'].includes(event.type) ? event.target : event.source;
+      const ownerId = ['damage', 'expired', 'death', 'lowHealth'].includes(event.type ?? '') ? event.target : event.source;
       for (const unit of ownerId ? units.filter(u => u.id === ownerId) : units) {
         if (unit.hp <= 0 && event.trigger !== 'OnDeath') continue;
         const learned = PASSIVES.find(p => p.id === unit.passive && p.trigger === event.trigger);
@@ -284,8 +292,9 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
         for (const application of applications) applyElement(application.source, application.target, application.element);
         }
       }
+      triggerPool.release(event);
     }
-    if (triggerQueue.length) { report.guardedEvents += triggerQueue.length; triggerQueue.length = 0; }
+    if (triggerQueue.length) { report.guardedEvents += triggerQueue.length; for (const event of triggerQueue) triggerPool.release(event); triggerQueue.length = 0; }
   }
 
   function chooseAction(source: CombatUnit) {
@@ -315,7 +324,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
   });
   let objectCharges = environment.interaction?.charges ?? 0;
   if (environment.startStatus) for (const unit of units) applyStatus(unit, environment.startStatus, 6, 1, unit);
-  if (config.modifiers?.enemyRegeneration) for (const unit of alive('enemy')) applyStatus(unit, 'regeneration', BALANCE.maxTime, config.modifiers.enemyRegeneration, unit);
+  if (config.modifiers?.enemyRegeneration) for (const unit of (config.normalized ? units.filter(u => u.hp > 0) : alive('enemy'))) applyStatus(unit, 'regeneration', BALANCE.maxTime, config.modifiers.enemyRegeneration, unit);
   emit('start', { seed: config.seed, environment: encounter.environment });
   processTriggers();
   if (captureFrames) frames.push(snapshot());
@@ -340,6 +349,15 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       const action = chooseAction(unit);
       if (!action) break;
       const { target, element } = action;
+      const ability = Object.values(unit.statuses).some(s => STATUSES[s.id].suppressEffects) ? undefined : unit.abilities.map(id => ABILITIES.find(a => a.id === id)!).find(a => (unit.cooldowns['ability:' + a.id] ?? 0) <= time && (a.condition !== 'wounded' || alive(unit.side).some(u => u.hp / u.maxHp < .7)) && (a.condition !== 'unshielded' || unit.shield === 0));
+      if (ability) {
+        unit.cooldowns['ability:' + ability.id] = time + ability.cooldown; unit.ready += unit.interval; report.decisions++;
+        emit('cast', { source: unit.id, target: target.id, element, name: ability.name });
+        const applications: ElementApplication[] = [];
+        applyEffects(ability.effects, unit, target, element, { depth: 0, triggered: new Set() }, applications);
+        for (const item of applications) applyElement(item.source, item.target, item.element);
+        processTriggers(); continue;
+      }
       unit.casts++;
       unit.ready += unit.interval;
       report.decisions++;

@@ -1,0 +1,11 @@
+{
+  "pack": {
+    "id": "opening-balance",
+    "version": 1
+  },
+  "balance": {
+    "criticalChance": 0.08,
+    "criticalMultiplier": 1.5,
+    "discoveryKnowledge": 5
+  }
+}

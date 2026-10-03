@@ -1,3 +1,5 @@
+import { validAbilities } from '../data/units.js';
+import { recordBattleCodex } from './codex.js';
 import type { Player, ReactionDefinition, ReactionContext, BattleResult, Loadout } from '../types.js';
 import { BALANCE, ELEMENTS, ELEMENT_BY_ID, REACTION_BY_ID, VESSELS, VESSEL_BY_ID, RELICS, RELIC_BY_ID, RESEARCH, ENCOUNTERS, ENCOUNTER_BY_ID } from '../data/content.js';
 import { resolveExperiment, reactionEngine } from './reactions.js';
@@ -61,7 +63,8 @@ export function updateLoadout(player: Player, index: unknown, value: unknown) {
   const patch = value as Partial<Loadout>;
   if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index >= player.team.length) return false;
   const slot = player.team[index];
-  if (!slot || !patch || typeof patch !== 'object' || Array.isArray(patch) || Object.values(patch).some(v => v === null) || Object.keys(patch).some(key => !['elements', 'relic', 'targeting', 'priority', 'reactionPriority'].includes(key))) return false;
+  if (!slot || !patch || typeof patch !== 'object' || Array.isArray(patch) || Object.values(patch).some(v => v === null) || Object.keys(patch).some(key => !['elements', 'relic', 'targeting', 'priority', 'reactionPriority', 'abilities'].includes(key))) return false;
+  if ('abilities' in patch && !validAbilities(patch.abilities, player.discoveries.length)) return false;
   if (patch.reactionPriority && (!Array.isArray(patch.reactionPriority) || patch.reactionPriority.length > 10 || patch.reactionPriority.some(id => !player.discoveries.includes(id)))) return false;
   if ('elements' in patch && (!Array.isArray(patch.elements) || patch.elements.length !== 2 || patch.elements.some(id => !player.owned.includes(id)))) return false;
   if ('relic' in patch && !unlockedRelics(player).some(r => r.id === patch.relic)) return false;
@@ -101,6 +104,8 @@ export function claimBattle(player: Player, battle: BattleResult, battleId: stri
   if (!encounter || !encounterUnlocked(player, encounter.id)) return { claimed: false, discoveries: [] };
   player.claimedBattles.push(battleId);
   player.battles++;
+  for (const slot of battle.config.team) player.vesselXp[slot.vessel] = Math.min(450, (player.vesselXp[slot.vessel] ?? 0) + (battle.outcome === 'victory' ? 10 : 3));
+  recordBattleCodex(player, battle);
   player.highestChain = Math.max(player.highestChain, battle.report.highestChain);
   track(player, battle.outcome === 'victory' ? 'battle_won' : 'battle_lost', { encounter: encounter.id, duration: battle.duration });
   player.lastReplay = structuredClone(battle.config);

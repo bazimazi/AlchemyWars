@@ -9,6 +9,67 @@ import { createService } from '../server/service.js';
 import { createAppServer } from '../server/http.js';
 import { simulateBattle } from '../src/core/combat.js';
 import { rotation } from '../src/core/modes.js';
+import { competitionRules } from '../src/core/competition.js';
+import { REACTIONS } from '../src/data/content.js';
+import { guildWeek } from '../server/guilds.js';
+
+test('guild exchange, hidden projects and missions persist with account-level claim limits', async t => {
+  const { service, directory } = await fixture(t);
+  const a = await service.register('Project_A', 'test-only-password-123'), b = await service.register('Project_B', 'test-only-password-123');
+  await service.social(a.token, 'guild-create', { name: 'Research Guild' });
+  const guildId = service.world(a.token).self.guildId!;
+  await service.social(b.token, 'guild-join', { id: guildId });
+  await service.store.transaction(db => { for (const user of db.users) { user.player.mastery.fire = 100; user.player.knowledge = 100; } });
+  const hidden = service.world(a.token).guilds[0].activity.project;
+  assert.equal('target' in hidden, false); assert.equal(hidden.reaction, undefined);
+  for (let i = 0; i < 3; i++) await service.social(a.token, 'guild-element-donate', { id: 'fire' });
+  await service.social(b.token, 'guild-element-claim', { id: 'fire' });
+  assert.equal(service.me(a.token).player!.mastery.fire, 10);
+  assert.equal(service.me(b.token).player!.mastery.fire, 115);
+  await assert.rejects(service.social(a.token, 'guild-element-donate', { id: 'fire' }), /30 mastery/);
+  await assert.rejects(service.social(b.token, 'guild-mission', { id: 'donations' }), /Contribute/);
+  const claims = await Promise.allSettled([service.social(a.token, 'guild-mission', { id: 'donations' }), service.social(a.token, 'guild-mission', { id: 'donations' })]);
+  assert.equal(claims.filter(r => r.status === 'fulfilled').length, 1);
+  const pairs = REACTIONS.filter(r => !r.conditions && r.inputs.every(id => a.player.owned.includes(id))).slice(0, 10);
+  assert.equal(pairs.length, 10);
+  for (const account of [a, b]) for (const rule of pairs) await service.social(account.token, 'guild-experiment', { a: rule.inputs[0], b: rule.inputs[1] });
+  const revealed = service.world(a.token).guilds[0].activity.project;
+  assert.equal(revealed.progress, 20); assert.ok(revealed.reaction);
+  assert.equal(revealed.contributors[a.account.id], 10);
+  assert.equal((await service.social(b.token, 'guild-mission', { id: 'project' })).result.reaction!.id, revealed.reaction.id);
+  const reopened = await createService(directory);
+  assert.equal(reopened.world(a.token).guilds[0].activity.project.progress, 20);
+  await service.social(a.token, 'guild-leave', {});
+  await service.social(a.token, 'guild-create', { name: 'Another Guild' });
+  await assert.rejects(service.social(a.token, 'guild-experiment', { a: pairs[0].inputs[0], b: pairs[0].inputs[1] }), /already contributed/);
+  const guild = service.store.data.guilds[0];
+  assert.equal(guildWeek(guild, Date.now() + 7 * 86400000).project.progress, 0);
+});
+
+test('Element Wars and Weekly Crucible use validated pools and independent once-weekly standings', async t => {
+  const { service } = await fixture(t);
+  const a = await service.register('Competitor_A', 'test-only-password-123'), b = await service.register('Competitor_B', 'test-only-password-123');
+  const rules = competitionRules();
+  for (const kind of ['element-wars', 'weekly-pvp']) {
+    const count = kind === 'element-wars' ? 2 : 3, pool = kind === 'element-wars' ? rules.elementPool : rules.pool;
+    await assert.rejects(service.startBattle(a.token, { kind, opponentId: b.account.id, draft: ['fire', 'fire'] }), /distinct/);
+    const first = await service.startBattle(a.token, { kind, opponentId: b.account.id, draft: pool.slice(0, count) });
+    assert.ok(first.config.normalized);
+    assert.ok(first.config.opponentTeam!.every(s => s.elements.every(id => pool.slice(count).includes(id))));
+    if (kind === 'weekly-pvp') assert.deepEqual(first.config.modifiers, rules.mutator.modifiers);
+    const result = await service.finishBattle(a.token, first.battleId);
+    const score = result.result!.outcome === 'victory' ? 3 : result.result!.outcome === 'draw' ? 1 : 0;
+    const key = kind === 'element-wars' ? 'elementWars' : 'weekly';
+    assert.equal(service.world(a.token).standings[key].find(p => p.id === a.account.id)!.score, score);
+    const repeat = await service.startBattle(a.token, { kind, opponentId: b.account.id, draft: pool.slice(0, count) });
+    assert.deepEqual(first.config, repeat.config);
+    await service.finishBattle(a.token, repeat.battleId);
+    assert.equal(service.world(a.token).standings[key].find(p => p.id === a.account.id)!.score, score);
+  }
+  assert.equal(service.store.data.users[0].competition!.claims.length, 2);
+  await service.store.transaction(db => { db.users[0].competition!.week--; });
+  assert.equal(service.world(a.token).standings.weekly.find(p => p.id === a.account.id)!.score, 0);
+});
 
 async function fixture(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'alchemy-wars-test-'));
@@ -140,6 +201,8 @@ test('HTTP rejects cross-origin writes and keeps world files private', async t =
   assert.equal(created.status, 200); assert.match(created.headers.get('set-cookie')!, /HttpOnly; SameSite=Strict/);
   const update = await fetch(origin + '/api/admin/live', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"enabled":true}' });
   assert.equal(update.status, 403);
+  assert.equal((await fetch(origin + '/api/admin/content', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 403);
+  assert.equal((await fetch(origin + '/api/content')).status, 200);
 });
 
 

@@ -12,7 +12,7 @@ The simulation runs at a fixed quarter-second timestep with seeded randomness. P
 
 Effects compose through damage, statuses, healing, shields, cleanse, chain, spread, element application, explosion, resurrection, summons and transformation. Fourteen event categories can trigger passives. Conditions support status, environment, health, neighboring enemy count, target tags, shielding and mastery. No individual recipe is hardcoded into the combat engine.
 
-The client and server call the same validated progression commands. The client never submits an authoritative battle outcome, damage figure, reward amount or chosen online seed. The server snapshots an issued battle and computes its result before paying. Concurrent claims pay once. Ranked account mastery, research, talents and evolution are normalized. Drafted PvP loans both participants complementary pools and equal starting vessels. Guild-war claims are recorded on the account as well as the guild, preventing repeated weekly points or gold after changing guilds. Season leaderboards display reset ratings immediately, including accounts that have not played their first new-season duel.
+The client and server call the same validated progression commands. The client never submits an authoritative battle outcome, damage figure, reward amount or chosen online seed. The server snapshots an issued battle and computes its result before paying. Concurrent claims pay once. Ranked account mastery, vessel growth, research, talents and evolution are normalized. Element Wars and Weekly Crucible also remove equipment/passives and loan equal vessels with complementary weekly elemental pools. Drafted PvP loans both participants complementary pools and equal starting vessels. Guild-war claims are recorded on the account as well as the guild, preventing repeated weekly points or gold after changing guilds. Season leaderboards display reset ratings immediately, including accounts that have not played their first new-season duel.
 
 ## Local and online saves
 
@@ -51,15 +51,36 @@ Raw gameplay events are bounded to the last 1,000 per account. Daily activity re
 
 Enable the battle journal/debug setting to expose the Alchemy Editor in navigation, or visit `/#editor`. Create element, reaction, status, enemy, relic or encounter templates, inspect effects, test an interaction, simulate a formation and inspect the complete event chain. The audit reports invalid references, duplicate concepts, dead ends, unused elements, unusually high effect power and bosses missing counterplay.
 
-Preview installs a validated pack in the current local browser session. Online accounts cannot preview modified rules. Export a reviewed pack and append it to the array in `assets/content-packs.json`; validate with `npm run build`, run tests, and restart the server. Client and server install the same ordered packs. Pack validation checks every effect primitive, nested reaction condition, boss phase effect, status modifier, relic modifier and encounter reference before making any changes. Pack entry IDs are stable, updates increase entry versions, and a reaction's ID matches its derived output element. This convention keeps discovery, collection and progression references stable.
+Preview installs a validated pack in the current local browser session. Online accounts cannot preview modified rules. Export a reviewed pack and append it to the array in `assets/content-packs.json`; validate with `npm run build`, run tests, and restart the server. Client and server install the same ordered packs. Pack validation checks every effect primitive, nested reaction condition, boss phase effect, status modifier, relic modifier and encounter reference before making any changes. Pack entry IDs are stable, updates increase entry versions, and recipe IDs are independent from their output element IDs. Alternate synthesis routes can therefore return to an existing element without duplicating its collection entry.
 
 Candidate generation combines tags and effect vocabulary and explicitly marks proposals as requiring designer approval. It does not automatically publish generated reactions. Original hand-authored content remains the default; the 10,000-rule test verifies lookup scale rather than padding the game with filler recipes.
 
-A release's content version is part of every replay. Old progression is migrated, but incompatible historical replays and pending battles are rejected/cleared instead of silently replaying different rules. Archive the old application build and data backup if historical replay playback is required. Remote mutators change runtime battle configuration, while new definitions require a reviewed content release.
+A release's content version is part of every replay. Old progression is migrated, but incompatible historical replays and pending battles are rejected/cleared instead of silently replaying different rules. Archive the old application build and data backup if historical replay playback is required. Remote mutators change runtime battle configuration. Reviewed content releases can also be published through the authenticated endpoint below without a restart.
+
+## Publishing live content
+
+`POST /api/admin/content` accepts `{ "pack": { "id": "release-name", "version": 1, ... }, "balance": { ... } }` with the same admin bearer token. The normal 64 KB request limit applies. Packs support elements, reactions, statuses, enemies (including boss phases), relics and encounters. Balance settings expose bounded combat and progression values; simulation timestep, execution limits and mastery thresholds remain fixed. For existing recipe cooldown changes, update the recipe definition itself.
+
+1. Review and test the pack locally using the editor and tests.
+2. Set `enabled: false` using `/api/admin/live`. Finish outstanding battles (abandoned issues expire after 24 hours).
+3. Submit the release. Invalid definitions or balance values leave both stored and active content unchanged. A release is stored atomically before activation; entry versions and release versions must increase.
+4. Re-enable the service through `/api/admin/live`.
+
+`GET /api/content` exposes the ordered published release history and current version. Clients synchronize before online mutations, cache releases locally, and reinstall them before loading saves when offline. The server restores releases before normalizing account saves. Up to 100 releases may be stored before folding them into a new distribution. A new distribution needs a new base content version. Historical replay compatibility requires retaining its original distribution/content.
+
+A minimal balance-only payload is provided in `examples/balance-release.json`. New executable effects, new UI screens or new kinds of content require a TypeScript release. Publishing data cannot run arbitrary code.
+
+## Added progression and discovery systems
+
+Each vessel can equip two ordered abilities. A ready ability replaces an elemental cast; wounded/unshielded conditions and cooldowns avoid wasting support actions. Campaign battles grant 10 vessel XP on victory and 3 otherwise, once per battle claim. Growth stops at level ten (450 XP). Fifteen vessel profiles define individual stat increments, idle motion, cast motion and timing; reduced-motion preferences suppress them.
+
+Guild members may donate an elemental imprint for 30 mastery XP; an owning member studies it for 15 XP. Weekly missions require a contribution before reward claims. A hidden project accepts distinct stable pairings at one knowledge each and reveals its recipe after twenty contributions. Claim and contribution limits remain on the account when changing guilds.
+
+The codex keeps the latest 200 distinct ordered reaction chains and encountered creatures. Chain paths come from causal simulation contexts, not neighboring log lines. Creature traits reveal after encounters; artifacts show acquisition state; lore includes owned elements and completed campaign memories. Continuation recipes close previously terminal graph nodes, and Mythic discoveries use the same bounded effect system.
 
 ## Verification and interpretation
 
-The current suite has 122 unit/integration tests and 14 browser tests. Unit/integration tests cover recipes, conditions, composition, deterministic replay, loop guards, HP/shield invariants, boss phases/immunities, ownership validation, progression spending, malformed saves and commands, recovery, idempotency, authenticated accounts, ranked/drafted PvP, guilds, live settings, social challenges, procedural runs and content scaling.
+The current suite has 192 unit/integration tests and 20 browser tests. Unit/integration tests cover recipes, conditions, composition, deterministic replay, loop guards, HP/shield invariants, boss phases/immunities, ownership validation, progression spending, malformed saves and commands, recovery, idempotency, authenticated accounts, ranked/drafted PvP, guilds, live settings, social challenges, procedural runs and content scaling.
 
 Browser tests run in isolated Chromium desktop and Pixel 7 emulation contexts. They cover discovery -> equip -> combat -> rewards -> replay -> reload; all screens and horizontal overflow; all eight roguelite floors with reloads; online registration, guild creation, server rewards and sign-in; connected graph; content editor validation; offline reload. CI repeats tests, build and a smaller balance run using the official [setup-node](https://github.com/actions/setup-node) and [checkout](https://github.com/actions/checkout) actions. [Playwright](https://playwright.dev/docs/intro) is justified by these browser checks.
 
