@@ -1,6 +1,6 @@
 // This script is compiled separately with WebWorker globals.
 const worker = self as unknown as ServiceWorkerGlobalScope;
-const CACHE = 'alchemy-wars-v5-expansion';
+const CACHE = 'alchemy-wars-v9-runs';
 worker.addEventListener('install', event => event.waitUntil(fetch('./assets/offline-files.json').then(response => response.json()).then(files => caches.open(CACHE).then(cache => cache.addAll(files)))));
 worker.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('alchemy-wars-') && key !== CACHE).map(key => caches.delete(key)))).then(() => worker.clients.claim())));
 worker.addEventListener('fetch', event => {

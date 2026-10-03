@@ -8,10 +8,154 @@ import { join } from 'node:path';
 import { createService } from '../server/service.js';
 import { createAppServer } from '../server/http.js';
 import { simulateBattle } from '../src/core/combat.js';
-import { rotation } from '../src/core/modes.js';
+import { rotation, startRun } from '../src/core/modes.js';
 import { competitionRules } from '../src/core/competition.js';
-import { REACTIONS } from '../src/data/content.js';
+import { REACTIONS, ENCOUNTERS } from '../src/data/content.js';
 import { guildWeek } from '../server/guilds.js';
+import { dailyGoals } from '../src/core/learning.js';
+
+test('server persists drafted run tools and scenarios, blocks issued-battle edits and settles once', async t => {
+  const { service, directory } = await fixture(t), account = await service.register('RunScholar', 'test-only-password-123');
+  await service.store.transaction(db => { startRun(db.users[0].player, 'roguelite', 42, ['light', 'shadow']); });
+  const launch = await service.startBattle(account.token, { kind: 'run' });
+  assert.equal(simulateBattle(launch.config).outcome, 'victory');
+  for (const command of ['run-scenario', 'run-tactics']) await assert.rejects(service.command(account.token, command, { index: 0, patch: { relic: 'none' }, context: {} }), /Finish the active run battle/);
+  await Promise.all([service.finishBattle(account.token, launch.battleId), service.finishBattle(account.token, launch.battleId)]);
+  assert.equal(service.me(account.token).player!.run!.wins, 1);
+  const choice = service.me(account.token).player!.run!.rewards[1]; assert.equal(choice.type, 'relic');
+  assert.equal((await service.command(account.token, 'run-reward', { index: 1 })).result, true);
+  assert.equal((await service.command(account.token, 'run-tactics', { index: 0, patch: { relic: choice.id, priority: 'reaction' } })).result, true);
+  assert.equal((await service.command(account.token, 'run-scenario', { context: { statuses: ['freeze'], shielded: true, research: ['reaction-science'] } })).result, true);
+  const reopened = await createService(directory), p = reopened.me(account.token).player!;
+  assert.deepEqual(p.run!.relics, [choice.id]); assert.equal(p.run!.team[0].relic, choice.id);
+  assert.deepEqual(p.run!.context, { statuses: ['freeze'], shielded: true, tags: [] });
+  const second = await reopened.startBattle(account.token, { kind: 'run' });
+  assert.equal(second.config.team[0].relic, choice.id); assert.deepEqual(second.config.research, []);
+  await reopened.finishBattle(account.token, second.battleId);
+  await reopened.command(account.token, 'retire-run'); const gold = reopened.me(account.token).player!.gold;
+  assert.equal((await reopened.command(account.token, 'retire-run')).result, false); assert.equal(reopened.me(account.token).player!.gold, gold);
+});
+
+test('server refuses unearned run equipment and ignores account mastery in run experiments', async t => {
+  const { service } = await fixture(t), account = await service.register('RunValidator', 'test-only-password-123');
+  await service.command(account.token, 'start-run', { mode: 'roguelite', elements: ['fire', 'water'] });
+  assert.equal((await service.command(account.token, 'run-tactics', { index: 0, patch: { relic: 'genesis-thread', passive: 'last-light' } })).result, false);
+  assert.equal((await service.command(account.token, 'run-tactics', { index: '__proto__', patch: { relic: 'none' } })).result, false);
+  await service.command(account.token, 'run-scenario', { context: { statuses: ['freeze'], mastery: { fire: 10 }, research: ['reaction-science'] } });
+  const response = await service.command(account.token, 'run-experiment', { a: 'fire', b: 'water' });
+  assert.equal((response.result as { id: string }).id, 'thermal-shock');
+  assert.ok(response.player.run!.elements.includes('thermal-shock')); assert.ok(!response.player.owned.includes('thermal-shock'));
+  await service.command(account.token, 'retire-run'); assert.ok(service.me(account.token).player!.owned.includes('thermal-shock'));
+});
+
+test('server records observed guardian rules once and preserves them through restart and replay', async t => {
+  const { service, directory } = await fixture(t), account = await service.register('GuardianScholar', 'test-only-password-123');
+  const target = 'emerald-wild-12';
+  await service.store.transaction(db => {
+    const p = db.users[0].player;
+    p.campaign = ENCOUNTERS.slice(0, ENCOUNTERS.findIndex(e => e.id === target)).map(e => e.id);
+    p.team.forEach(s => { s.elements = ['fire', 'fire']; p.vesselXp[s.vessel] = 450; });
+    p.mastery.fire = 300; p.research = ['warding', 'resonance', 'cultivation'];
+  });
+  const launch = await service.startBattle(account.token, { encounterId: target }), battle = simulateBattle(launch.config);
+  assert.equal(battle.outcome, 'victory'); assert.ok(battle.report.mechanics['plague-mother'].counters.burn);
+  await Promise.all([service.finishBattle(account.token, launch.battleId), service.finishBattle(account.token, launch.battleId)]);
+  const p = service.me(account.token).player!;
+  assert.equal(p.battles, 1); assert.ok(p.campaign.includes(target));
+  assert.deepEqual(p.creatureKnowledge['plague-mother'].phases, battle.report.mechanics['plague-mother'].phases);
+  const reopened = await createService(directory), saved = reopened.me(account.token).player!;
+  assert.deepEqual(saved.creatureKnowledge, p.creatureKnowledge);
+  assert.deepEqual(simulateBattle(saved.lastReplay!).report, battle.report);
+  await reopened.finishBattle(account.token, launch.battleId);
+  assert.equal(reopened.me(account.token).player!.battles, 1);
+});
+
+test('server rejects forged research context and persists purchased recipe and blueprint unlocks', async t => {
+  const { service, directory } = await fixture(t);
+  const account = await service.register('ResearchScholar', 'test-only-password-123');
+  await service.store.transaction(db => { const p = db.users[0].player; p.knowledge = 200; p.gold = 500; p.essence = 100; p.shards = 10; });
+  await service.command(account.token, 'experiment', { a: 'fire', b: 'water' });
+  const forged = await service.command(account.token, 'experiment', { a: 'steam', b: 'wind', context: { research: ['reaction-science'] } });
+  assert.equal((forged.result as { rule: { id: string } }).rule.id, 'storm-cloud');
+  assert.equal((await service.command(account.token, 'research', { id: 'reaction-science' })).result, false);
+  assert.equal((await service.command(account.token, 'craft', { id: 'echo-catalyst' })).result, false);
+  await service.command(account.token, 'research', { id: 'resonance' });
+  const before = service.me(account.token).player!.knowledge;
+  const purchases = await Promise.all([service.command(account.token, 'research', { id: 'reaction-science' }), service.command(account.token, 'research', { id: 'reaction-science' })]);
+  assert.equal(purchases.filter(r => r.result === true).length, 1);
+  assert.equal(service.me(account.token).player!.knowledge, before - 25);
+  const learned = await service.command(account.token, 'experiment', { a: 'steam', b: 'wind' });
+  assert.equal((learned.result as { rule: { id: string } }).rule.id, 'pressure-current');
+  await service.command(account.token, 'research', { id: 'catalyst-study' });
+  const crafts = await Promise.all([service.command(account.token, 'craft', { id: 'echo-catalyst' }), service.command(account.token, 'craft', { id: 'echo-catalyst' })]);
+  assert.equal(crafts.filter(r => r.result === true).length, 1);
+  const reopened = await createService(directory), p = reopened.me(account.token).player!;
+  assert.ok(p.discoveries.includes('pressure-current')); assert.ok(p.equipment.includes('echo-catalyst'));
+  assert.ok(p.research.includes('reaction-science')); assert.equal(p.gold, 380);
+});
+
+test('server validates third-slot purchases and includes abilities in authoritative battle snapshots', async t => {
+  const { service, directory } = await fixture(t), account = await service.register('TacticalScholar', 'test-only-password-123');
+  await service.store.transaction(db => { db.users[0].player.knowledge = 200; });
+  await service.command(account.token, 'experiment', { a: 'fire', b: 'water' });
+  await service.command(account.token, 'experiment', { a: 'fire', b: 'earth' });
+  await service.command(account.token, 'experiment', { a: 'fire', b: 'wind' });
+  await service.command(account.token, 'experiment', { a: 'fire', b: 'nature' });
+  const payload = { index: 0, patch: { abilities: ['ward', 'mend', 'fracture'] } };
+  assert.equal((await service.command(account.token, 'loadout', payload)).result, false);
+  await service.command(account.token, 'research', { id: 'warding' });
+  await service.command(account.token, 'research', { id: 'tactical-memory' });
+  assert.equal((await service.command(account.token, 'loadout', payload)).result, true);
+  const launch = await service.startBattle(account.token, { encounterId: 'whispering-grove' });
+  assert.deepEqual(launch.config.team[0].abilities, payload.patch.abilities);
+  assert.ok(simulateBattle(launch.config).events.some(e => e.type === 'cast' && e.name === 'Fracturing Strike'));
+  await service.finishBattle(account.token, launch.battleId);
+  const reopened = await createService(directory);
+  assert.deepEqual(reopened.me(account.token).player!.team[0].abilities, payload.patch.abilities);
+  assert.equal((await reopened.command(account.token, 'loadout', { index: 0, patch: { abilities: ['renewal'] } })).result, false);
+});
+
+test('server validates daily learning rewards, serializes duplicate claims and persists counters', async t => {
+  const { service, directory } = await fixture(t);
+  const account = await service.register('DailyScholar', 'test-only-password-123');
+  assert.equal((await service.command(account.token, 'daily-goal', { id: 'practice', count: 999 })).result, false);
+  const practice = dailyGoals().practice;
+  const rules = REACTIONS.filter(r => !r.conditions && r.inputs.includes(practice) && r.inputs.every(id => account.player.owned.includes(id))).slice(0, 2);
+  assert.equal(rules.length, 2);
+  for (const rule of rules) await service.command(account.token, 'experiment', { a: rule.inputs[0], b: rule.inputs[1] });
+  const before = service.me(account.token).player!.gold;
+  const claims = await Promise.all([service.command(account.token, 'daily-goal', { id: 'practice' }), service.command(account.token, 'daily-goal', { id: 'practice' })]);
+  assert.equal(claims.filter(c => c.result === true).length, 1);
+  assert.equal(service.me(account.token).player!.gold, before + 25);
+  const reopened = await createService(directory);
+  assert.deepEqual(reopened.me(account.token).player!.learning, service.me(account.token).player!.learning);
+  assert.equal((await reopened.command(account.token, 'daily-goal', { id: 'practice' })).result, false);
+});
+
+test('server battle completion records elemental usage once across retries', async t => {
+  const { service } = await fixture(t);
+  const account = await service.register('CastScholar', 'test-only-password-123');
+  const pending = await service.startBattle(account.token, { kind: 'campaign', encounterId: 'whispering-grove' });
+  const battle = simulateBattle(pending.config, { captureFrames: false });
+  await service.finishBattle(account.token, pending.battleId);
+  assert.deepEqual(service.me(account.token).player!.learning.elementCasts, battle.report.elementCasts);
+  await service.finishBattle(account.token, pending.battleId);
+  assert.deepEqual(service.me(account.token).player!.learning.elementCasts, battle.report.elementCasts);
+});
+
+test('content upgrades reject stale rewards and allow a new battle without lost progression', async t => {
+  const { service } = await fixture(t);
+  const account = await service.register('UpgradeScholar', 'test-only-password-123');
+  await service.command(account.token, 'experiment', { a: 'fire', b: 'water' });
+  const pending = await service.startBattle(account.token, { kind: 'campaign', encounterId: 'whispering-grove' });
+  await service.store.transaction(db => { db.battles[pending.battleId].config.contentVersion = '0.0.0'; });
+  await assert.rejects(service.finishBattle(account.token, pending.battleId), /Begin a new battle/);
+  const fresh = await service.startBattle(account.token, { kind: 'campaign', encounterId: 'whispering-grove' });
+  assert.notEqual(fresh.battleId, pending.battleId);
+  const player = service.me(account.token).player!;
+  assert.equal(player.gold, 0); assert.equal(player.battles, 0); assert.ok(player.discoveries.includes('steam'));
+  assert.equal(service.store.data.battles[pending.battleId], undefined);
+});
 
 test('guild exchange, hidden projects and missions persist with account-level claim limits', async t => {
   const { service, directory } = await fixture(t);
@@ -178,6 +322,22 @@ test('community challenges reject impossible content and validate every solution
   const knowledge = service.me(b.token).player!.knowledge;
   await service.social(b.token, 'challenge-solve', { id: challenge.id, steps: [['fire', 'water']] });
   assert.equal(service.me(b.token).player!.knowledge, knowledge);
+});
+
+test('community challenge authors earn XP once per other solver and not for their own solution', async t => {
+  const { service, directory } = await fixture(t);
+  const author = await service.register('AuthorScholar', 'test-only-password-123'), solver = await service.register('SolverScholar', 'test-only-password-123');
+  await service.command(author.token, 'experiment', { a: 'fire', b: 'water' });
+  await service.social(author.token, 'challenge-create', { name: 'Steam study', target: 'steam', allowed: ['fire', 'water'] });
+  const id = service.world(solver.token).challenges[0].id, before = service.me(author.token).player!.xp;
+  const solution = { id, steps: [['fire', 'water']] };
+  await Promise.all([service.social(solver.token, 'challenge-solve', solution), service.social(solver.token, 'challenge-solve', solution)]);
+  assert.equal(service.me(author.token).player!.xp, before + 10);
+  await service.social(author.token, 'challenge-solve', solution);
+  assert.equal(service.me(author.token).player!.xp, before + 10 + 20);
+  const reopened = await createService(directory), xp = reopened.me(author.token).player!.xp;
+  await reopened.social(solver.token, 'challenge-solve', solution);
+  assert.equal(reopened.me(author.token).player!.xp, xp);
 });
 test('PvP uses validated opposing teams and rewards a daily opponent once', async t => {
   const { service } = await fixture(t), a = await service.register('Alchemist_A', 'test-only-password-123'), b = await service.register('Alchemist_B', 'test-only-password-456');

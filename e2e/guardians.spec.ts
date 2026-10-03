@@ -1,0 +1,111 @@
+import { test, expect } from '@playwright/test';
+
+test('campaign conversations and vessel contributions survive a completed expedition', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/#battle');
+  await expect(page.locator('.campaign-story')).toContainText('Lyra');
+  await expect(page.locator('.campaign-story')).toContainText('Watch what Water leaves behind for Lightning.');
+  await page.getByRole('button', { name: 'Begin expedition' }).click();
+  await page.getByRole('button', { name: 'Skip to report' }).click();
+  await expect(page.locator('.report')).toContainText('A theory, proven.');
+  const contributions = page.getByRole('region', { name: 'Vessel contributions', exact: true });
+  await expect(contributions.locator('tbody tr')).toHaveCount(5);
+  await expect(contributions).toContainText('Shield granted');
+  await contributions.focus(); await expect(contributions).toBeFocused();
+  await page.locator('.report .campaign-story summary').click();
+  await expect(page.locator('.report .campaign-story')).toContainText('The world remembers relationships');
+  await page.locator('.report').screenshot({ path: 'test-results/guardian-contributions-' + info.project.name + '.png' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.goto('/#codex'); await page.getByRole('button', { name: 'Lore', exact: true }).click();
+  await expect(page.locator('[data-scene="whispering-grove"]')).toContainText('Lyra');
+  await page.reload(); await page.getByRole('button', { name: 'Lore', exact: true }).click();
+  await expect(page.locator('[data-scene="whispering-grove"]')).toContainText('The world remembers relationships');
+  expect(errors).toEqual([]);
+});
+
+test('Molten King preparation, inspection and observed phases persist after victory', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/#battle');
+  await page.evaluate(async () => {
+    const { createPlayer } = await import('/src/core/progression.js');
+    const p = createPlayer(); p.campaign = ['whispering-grove', 'drowned-ruins'];
+    p.team.forEach(s => { s.elements = ['water', 'lightning']; p.vesselXp[s.vessel] = 450; });
+    p.mastery.water = 300; p.mastery.lightning = 300;
+    localStorage.setItem('alchemy-wars.save.v1', JSON.stringify(p));
+  });
+  await page.reload(); await page.locator('[data-action="encounter"][data-id="molten-throne"]').click();
+  await page.locator('.guardian-notes summary').click();
+  await expect(page.locator('.guardian-notes')).toContainText('Volcanic Eruption');
+  await expect(page.locator('.guardian-notes')).toContainText('Interrupted by Wet, Frozen');
+  await page.locator('.guardian-notes').screenshot({ path: 'test-results/guardian-preparation-' + info.project.name + '.png' });
+  await page.getByRole('button', { name: 'Begin expedition' }).click();
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await page.getByRole('button', { name: 'Inspect The Molten King', exact: true }).click();
+  await expect(page.locator('.unit-inspector')).toContainText('Opening phase');
+  await expect(page.locator('.unit-inspector')).toContainText('Fire + Magma');
+  await expect(page.locator('.unit-inspector')).toContainText('Immunities: Burn');
+  await page.getByRole('dialog').screenshot({ path: 'test-results/guardian-inspector-' + info.project.name + '.png' });
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Skip to report' }).click();
+  await expect(page.locator('.report')).toContainText('A theory, proven.');
+  for (const phase of ['The crown hardens', 'The core awakens', 'Volcanic eruption']) await expect(page.locator('.guardian-report')).toContainText(phase);
+  await page.locator('.guardian-report').screenshot({ path: 'test-results/guardian-phases-' + info.project.name + '.png' });
+  await page.getByRole('button', { name: 'Inspect The Molten King', exact: true }).click();
+  await expect(page.locator('.unit-inspector')).toContainText('Phase: Volcanic eruption');
+  await expect(page.locator('.unit-inspector')).toContainText('Magma + Fire');
+  await page.keyboard.press('Escape');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.goto('/#codex'); await page.getByRole('button', { name: 'Creatures', exact: true }).click();
+  const king = page.locator('.codex-grid article').filter({ has: page.getByRole('heading', { name: 'The Molten King', exact: true }) });
+  for (const phase of [1, 2, 3]) await expect(king).toContainText('Observed phase ' + phase);
+  await page.reload(); await page.getByRole('button', { name: 'Creatures', exact: true }).click();
+  await expect(king).toContainText('Observed phase 3');
+  expect(errors).toEqual([]);
+});
+
+test('Fire counters the Plague Mother and records the result without replay rewards', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/#battle');
+  await page.evaluate(async () => {
+    const { createPlayer } = await import('/src/core/progression.js');
+    const { ENCOUNTERS } = await import('/src/data/content.js');
+    const p = createPlayer();
+    p.campaign = ENCOUNTERS.slice(0, ENCOUNTERS.findIndex(e => e.id === 'emerald-wild-12')).map(e => e.id);
+    p.team.forEach(s => { s.elements = ['fire', 'fire']; p.vesselXp[s.vessel] = 450; });
+    p.mastery.fire = 300; p.research = ['warding', 'resonance', 'cultivation'];
+    localStorage.setItem('alchemy-wars.save.v1', JSON.stringify(p));
+  });
+  await page.reload(); await page.getByRole('button', { name: 'The Emerald Wild', exact: true }).click();
+  await expect(page.locator('.campaign-story')).toContainText('Moss');
+  await expect(page.locator('.campaign-story')).toContainText('Burn sterilizes them');
+  await page.getByRole('button', { name: 'Begin expedition' }).click();
+  await page.getByRole('button', { name: 'Skip to report' }).click();
+  await expect(page.locator('.report')).toContainText('A theory, proven.');
+  await expect(page.locator('.guardian-report')).toContainText('Burn interrupted The Plague Mother');
+  await page.locator('.guardian-report').screenshot({ path: 'test-results/guardian-counterplay-' + info.project.name + '.png' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('alchemy-wars.save.v1')!));
+  expect(saved.creatureKnowledge['plague-mother'].phases).toEqual([1, 2]);
+  expect(saved.battles).toBe(1);
+  await page.getByRole('button', { name: 'Replay battle', exact: true }).click();
+  await page.getByRole('button', { name: 'Skip to report' }).click();
+  await expect(page.locator('.guardian-report')).toContainText('Burn interrupted The Plague Mother');
+  const replayed = await page.evaluate(() => JSON.parse(localStorage.getItem('alchemy-wars.save.v1')!));
+  expect(replayed.battles).toBe(1); expect(replayed.gold).toBe(saved.gold);
+  expect(replayed.creatureKnowledge).toEqual(saved.creatureKnowledge);
+  expect(errors).toEqual([]);
+});
+
+test('locked regions hide future conversations and cannot launch expeditions', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/#battle'); await page.getByRole('button', { name: 'The First Flame', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Begin expedition' })).toBeDisabled();
+  await expect(page.locator('.campaign-story')).toHaveCount(0);
+  await expect(page.locator('.guardian-notes')).toHaveCount(0);
+  await expect(page.locator('.encounter').first()).toContainText('Complete the previous expedition to uncover this memory.');
+  await page.getByRole('button', { name: 'Prologue', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Begin expedition' })).toBeEnabled();
+  await expect(page.locator('.campaign-story')).toContainText('Lyra');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});

@@ -1,6 +1,7 @@
+import { validateUnitMechanics } from '../data/unit-rules.js';
 import { ENVIRONMENTS } from '../data/systems.js';
 import type { ElementDefinition, ReactionDefinition, StatusDefinition, UnitDefinition, Relic, Encounter } from '../types.js';
-import { ELEMENTS, ELEMENT_BY_ID, REACTIONS, REACTION_BY_ID, STATUSES, ENEMIES, ENEMY_BY_ID, RELICS, RELIC_BY_ID, ENCOUNTERS, ENCOUNTER_BY_ID, CONTENT_VERSION, setContentVersion, validateContent } from '../data/content.js';
+import { RESEARCH, ELEMENTS, ELEMENT_BY_ID, REACTIONS, REACTION_BY_ID, STATUSES, ENEMIES, ENEMY_BY_ID, RELICS, RELIC_BY_ID, ENCOUNTERS, ENCOUNTER_BY_ID, CONTENT_VERSION, setContentVersion, validateContent } from '../data/content.js';
 import { rebuildReactionIndex } from './reactions.js';
 const idPattern = /^(?!(?:constructor|prototype)$)[a-z][a-z0-9-]{1,59}$/;
 const kinds = ['elements', 'reactions', 'statuses', 'enemies', 'relics', 'encounters'] as const;
@@ -106,7 +107,7 @@ export function validatePack(input: unknown): string[] {
         const c = object(e.conditions);
         if (!c) issues.push(e.id + ': invalid conditions.');
         else for (const [key, v] of Object.entries(c)) {
-          const valid = key === 'environment' ? typeof v === 'string' && Object.hasOwn(ENVIRONMENTS, v) : key === 'statuses' ? strings(v) && v.every(id => has('statuses', id)) : key === 'requiredTags' ? strings(v) && v.every(identifier) : key === 'mastery' ? object(v) && Object.entries(object(v)!).every(([id, n]) => has('elements', id) && number(n, 0, 10) && Number.isInteger(n)) : key === 'healthBelow' ? number(v, 0, 1) : key === 'minimumEnemies' ? number(v, 0, 10) && Number.isInteger(v) : key === 'shielded' ? typeof v === 'boolean' : false;
+          const valid = key === 'environment' ? typeof v === 'string' && Object.hasOwn(ENVIRONMENTS, v) : key === 'statuses' ? strings(v) && v.every(id => has('statuses', id)) : key === 'research' ? strings(v) && v.every(id => RESEARCH.some(r => r.id === id)) : key === 'requiredTags' ? strings(v) && v.every(identifier) : key === 'mastery' ? object(v) && Object.entries(object(v)!).every(([id, n]) => has('elements', id) && number(n, 0, 10) && Number.isInteger(n)) : key === 'healthBelow' ? number(v, 0, 1) : key === 'minimumEnemies' ? number(v, 0, 10) && Number.isInteger(v) : key === 'shielded' ? typeof v === 'boolean' : false;
           if (!valid) issues.push(e.id + ': invalid condition ' + key);
         }
       }
@@ -122,12 +123,9 @@ export function validatePack(input: unknown): string[] {
       if (!['hp', 'attack', 'armor', 'interval'].every(k => number(e[k], k === 'armor' ? 0 : .01)) || !strings(e.elements) || e.elements.length !== 2 || e.elements.some(id => !has('elements', id)) || typeof e.shape !== 'string') issues.push(e.id + ': invalid enemy stats or loadout.');
       if (e.immunities !== undefined && (!strings(e.immunities) || e.immunities.some(id => !has('statuses', id)))) issues.push(e.id + ': invalid immunities.');
       if (e.weaknesses !== undefined) { if (!Array.isArray(e.weaknesses) || e.weaknesses.some(w => !object(w) || !has('statuses', w.status) || !number(w.armorMultiplier,0,5) || w.damageMultiplier !== undefined && !number(w.damageMultiplier,0,5))) issues.push(e.id + ': invalid weaknesses.'); }
-      if (e.phases !== undefined) {
-        if (!Array.isArray(e.phases) || e.phases.length > 10) issues.push(e.id + ': invalid phases.');
-        else for (const raw of e.phases) { const phase = object(raw); if (!phase || !number(phase.below, 0, 1) || !number(phase.attackMultiplier, .1, 5) || !number(phase.intervalMultiplier, .1, 5) || typeof phase.label !== 'string') issues.push(e.id + ': invalid phase.'); else if (phase.effects !== undefined) effects(phase.effects, e.id); }
-      }
+      issues.push(...validateUnitMechanics(e, { element: id => has('elements', id), status: id => has('statuses', id), effects: value => effects(value, e.id), modifiers: value => modifiers(value, e.id) }).map(issue => e.id + ': ' + issue));
     }
-    if (kind === 'relics') { modifiers(e.modifiers, e.id); if (!number(e.discoveries) || !Number.isInteger(e.discoveries) || typeof e.description !== 'string') issues.push(e.id + ': invalid relic unlock.'); }
+    if (kind === 'relics') { if (e.rarity !== undefined && !['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic'].includes(String(e.rarity))) issues.push(e.id + ': invalid artifact rarity.'); modifiers(e.modifiers, e.id); if (!number(e.discoveries) || !Number.isInteger(e.discoveries) || typeof e.description !== 'string') issues.push(e.id + ': invalid relic unlock.'); }
     if (kind === 'encounters') {
       if (!strings(e.enemies) || !e.enemies.length || e.enemies.length > 10 || e.enemies.some(id => !has('enemies', id)) || !['gold', 'knowledge', 'xp'].every(k => number(e[k])) || typeof e.environment !== 'string' || !Object.hasOwn(ENVIRONMENTS, e.environment) || e.scale !== undefined && !number(e.scale,.1,100)) issues.push(e.id + ': invalid encounter or rewards.');
       for (const key of ['region','label','description','tip']) if (typeof e[key] !== 'string') issues.push(e.id + ': missing ' + key);

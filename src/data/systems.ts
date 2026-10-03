@@ -1,5 +1,6 @@
 import type { Talent, Passive, Equipment, Specialization, Quest, Modifiers, Environment } from '../types.js';
 const meta = { version: 1, enabled: true, releaseDate: '2026-10-01' };
+export const DISCOVERY_REWARDS = { dailyGoal: { gold: 25, knowledge: 3, essence: 5 }, challengeSolver: { xp: 20, knowledge: 3 }, challengeCreatorXp: 10 };
 export const MASTERY_REWARDS = { spreadLevel: 3, variantLevel: 5, durationLevel: 5, durationBonus: 1, passiveLevel: 7, experimentLevel: 10, maximumLevel: 10, passive: { id: 'mastery-echo', name: 'Mastery Echo', trigger: 'OnKill', cooldown: 8, effects: [{ type: 'explode', scale: .35, count: 3 }] } satisfies Passive };
 export const TALENTS: Talent[] = [
   { id: 'careful-notes', branch: 'Discovery', name: 'Careful Notes', cost: 10, description: 'Discoveries award 2 extra knowledge.', modifiers: { discoveryKnowledge: 2 } },
@@ -27,11 +28,15 @@ export const EQUIPMENT: Equipment[] = ([
   { id: 'winter-catalyst', name: 'Winter Catalyst', slot: 'catalyst', gold: 100, essence: 18, shards: 2, description: 'Slow persists for 3 extra seconds.', modifiers: { statusDuration: { slow: 3 } } },
   { id: 'aegis-core', name: 'Aegis Core', slot: 'core', gold: 90, essence: 15, shards: 2, description: 'Begin battle with 75 shield.', modifiers: { startingShield: 75 } },
   { id: 'venom-focus', name: 'Venom Focus', slot: 'weapon', gold: 70, essence: 10, shards: 1, description: 'Poison persists for 3 extra seconds.', modifiers: { statusDuration: { poison: 3 } } },
+  { id: 'echo-catalyst', name: 'Echo Catalyst', slot: 'catalyst', gold: 120, essence: 18, shards: 2, requiresResearch: ['catalyst-study'], description: 'This vessel can sustain reaction chains one level deeper.', modifiers: { chainDepth: 1 } },
 ] satisfies Omit<Equipment, 'tags' | 'rarity'>[]).map<Equipment>(x => ({ ...meta, tags: [x.slot], rarity: x.shards > 1 ? 'Rare' : 'Uncommon', ...x, modifiers: x.modifiers as Modifiers }));
 export const SPECIALIZATIONS: Specialization[] = [
   { id: 'volatile', name: 'Volatile', description: 'Strikes deal 15% more damage; the vessel takes 10% more damage.', power: 1.15, received: 1.1 },
   { id: 'enduring', name: 'Enduring', description: 'Applied statuses last 2 seconds longer.', duration: 2 },
   { id: 'restorative', name: 'Restorative', description: 'Healing and shields are 25% stronger.', healing: 1.25, shield: 1.25 },
+  { id: 'ember', name: 'Ember', tags: ['heat'], description: 'Heat elements deal 15% less strike damage and apply an additional stacking burn on each elemental cast.', power: .85, castEffects: [{ type: 'status', status: 'burn', duration: 6, intensity: .15 }] },
+  { id: 'phoenix', name: 'Phoenix', tags: ['heat', 'spirit'], description: 'Heat or spirit elements deal 10% less strike damage. On a kill, revive one fallen ally at 20% health and heal the weakest ally. 20-second cooldown.', power: .9, cooldown: 20, onKillEffects: [{ type: 'resurrect', scale: .2 }, { type: 'heal', scale: .5, recipient: 'weakestAlly' }] },
+  { id: 'volcanic', name: 'Volcanic', tags: ['heat', 'earth'], description: 'Heat or earth elements deal 10% less strike damage and briefly root the target on a cast. 6-second cooldown.', power: .9, cooldown: 6, castEffects: [{ type: 'status', status: 'root', duration: 1.25, intensity: 1 }] },
 ];
 export const QUESTS: Quest[] = ([
   { id: 'first-reaction', name: 'The First Relationship', description: 'Discover one reaction.', metric: 'discoveries', target: 1, gold: 25, knowledge: 3 },
@@ -41,11 +46,17 @@ export const QUESTS: Quest[] = ([
   { id: 'explorer', name: 'Past the Horizon', description: 'Complete twelve campaign locations.', metric: 'campaign', target: 12, gold: 150, knowledge: 20 },
   { id: 'weather-maker', name: 'Weather Maker', description: 'Discover Thunderstorm.', reaction: 'thunderstorm', target: 1, gold: 75, knowledge: 10 },
   { id: 'run-scholar', name: 'An Unlikely Theory', description: 'Complete a roguelite run.', metric: 'runsWon', target: 1, gold: 150, knowledge: 15 },
+  { id: 'water-scholar', name: 'Water Remembers', description: 'Discover five distinct reactions involving Water.', criteria: { type: 'discovery-element', element: 'water' }, target: 5, gold: 90, knowledge: 12 },
+  { id: 'chain-scholar', name: 'Follow the Current', description: 'Discover three chain-tagged reactions.', criteria: { type: 'discovery-tag', tag: 'chain' }, target: 3, gold: 80, knowledge: 12 },
+  { id: 'own-theory', name: 'Your Own Theory', description: 'Discover five relationships without purchasing their hints.', criteria: { type: 'unassisted' }, target: 5, gold: 80, knowledge: 10 },
+  { id: 'diverse-chain', name: 'A Wider Connection', description: 'Observe a causal combat chain connecting at least four different elements.', criteria: { type: 'chain-elements' }, target: 4, gold: 100, knowledge: 15 },
+  { id: 'fresh-theory', name: 'Freshly Proven', description: 'Use a reaction in a victory on the UTC day you discover it.', criteria: { type: 'fresh-victory' }, target: 1, gold: 65, knowledge: 8 },
+  { id: 'fire-practice', name: 'Keep the Flame', description: 'Win three battles in which Fire actually casts.', criteria: { type: 'element-victories', element: 'fire' }, target: 3, gold: 80, knowledge: 10 },
 ] satisfies Quest[]).map(x => ({ ...meta, ...x }));
 export const ACHIEVEMENTS: Quest[] = [
-  ...QUESTS.map(q => ({ ...q, id: 'achievement-' + q.id, gold: 0, knowledge: 0 })),
-  { ...meta, id: 'master-alchemist', name: 'Master Alchemist', description: 'Discover fifty reactions.', metric: 'discoveries', target: 50, gold: 0, knowledge: 0 },
-  { ...meta, id: 'depths', name: 'Into the Depths', description: 'Reach endless floor ten.', metric: 'endlessBest', target: 10, gold: 0, knowledge: 0 },
+  ...QUESTS.map(q => ({ ...q, id: 'achievement-' + q.id, gold: Math.max(10, Math.floor(q.gold / 2)), knowledge: Math.max(1, Math.floor(q.knowledge / 2)) })),
+  { ...meta, id: 'master-alchemist', name: 'Master Alchemist', description: 'Discover fifty reactions.', metric: 'discoveries', target: 50, gold: 150, knowledge: 20 },
+  { ...meta, id: 'depths', name: 'Into the Depths', description: 'Reach endless floor ten.', metric: 'endlessBest', target: 10, gold: 100, knowledge: 15 },
 ];
 export const RUN_UPGRADES: { id: string; name: string; description: string; modifiers: Modifiers }[] = [
   { id: 'ward', name: 'Glass Aegis', description: 'Begin each battle with 100 shield.', modifiers: { startingShield: 100 } },

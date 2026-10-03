@@ -1,10 +1,11 @@
 import type { Effect } from '../types.js';
-export interface Ability { id: string; name: string; description: string; cooldown: number; discoveries: number; condition?: 'wounded' | 'unshielded'; effects: Effect[] }
+export interface Ability { id: string; name: string; description: string; cooldown: number; discoveries: number; requiresResearch?: string[]; condition?: 'wounded' | 'unshielded'; effects: Effect[] }
 export const ABILITIES: Ability[] = [
   { id: 'ward', name: 'Personal Ward', description: 'Spend a cast shielding yourself when unshielded.', cooldown: 9, discoveries: 0, condition: 'unshielded', effects: [{ type: 'shield', scale: 1.5, recipient: 'source' }] },
   { id: 'mend', name: 'Mending Pulse', description: 'Spend a cast healing the most wounded ally below 70% health.', cooldown: 10, discoveries: 2, condition: 'wounded', effects: [{ type: 'heal', scale: 1.4, recipient: 'weakestAlly' }] },
   { id: 'fracture', name: 'Fracturing Strike', description: 'Spend a cast damaging a target and breaking its armor.', cooldown: 12, discoveries: 4, effects: [{ type: 'damage', scale: .9 }, { type: 'status', status: 'armor-break', duration: 4, intensity: .2 }] },
   { id: 'purge', name: 'Restoring Light', description: 'Spend a cast cleansing and healing a wounded ally.', cooldown: 14, discoveries: 8, condition: 'wounded', effects: [{ type: 'cleanse', count: 2, recipient: 'weakestAlly' }, { type: 'heal', scale: .8, recipient: 'weakestAlly' }] },
+  { id: 'renewal', name: 'Renewal Pulse', description: 'Spend a cast healing and regenerating the most wounded ally below 70% health.', cooldown: 16, discoveries: 0, requiresResearch: ['vessel-forms'], condition: 'wounded', effects: [{ type: 'heal', scale: .8, recipient: 'weakestAlly' }, { type: 'status', status: 'regeneration', duration: 5, intensity: .12, recipient: 'weakestAlly' }] },
 ];
 export interface VesselProfile { growth: { hp: number; attack: number; armor: number }; animation: { idle: 'sway' | 'hover' | 'pulse'; duration: number; lift: number; cast: number } }
 // Per-level growth is capped at level ten; normalized competitive battles ignore it.
@@ -19,6 +20,6 @@ export const VESSEL_PROFILES: Record<string, VesselProfile> = Object.fromEntries
   ['djinn', 4, .65, .15, 'pulse', 2.6, 6, 9],
 ] satisfies [string, number, number, number, VesselProfile['animation']['idle'], number, number, number][]).map(([id, hp, attack, armor, idle, duration, lift, cast]) => [id, { growth: { hp, attack, armor }, animation: { idle, duration, lift, cast } }]));
 export const vesselLevel = (xp = 0) => Math.min(10, 1 + Math.floor(Math.max(0, xp) / 50));
-export function validAbilities(value: unknown, discoveries = Infinity): value is string[] {
-  return Array.isArray(value) && value.length <= 2 && new Set(value).size === value.length && value.every(id => ABILITIES.some(a => a.id === id && discoveries >= a.discoveries));
+export function validAbilities(value: unknown, discoveries = Infinity, slots = 2, research?: readonly string[]): value is string[] {
+  return Array.isArray(value) && value.length <= slots && new Set(value).size === value.length && value.every(id => ABILITIES.some(a => a.id === id && discoveries >= a.discoveries && (research === undefined || a.requiresResearch?.every(id => research.includes(id)) !== false)));
 }

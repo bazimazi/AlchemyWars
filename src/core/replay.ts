@@ -1,3 +1,4 @@
+import { abilitySlots } from './research.js';
 import { validAbilities } from '../data/units.js';
 import type { BattleConfig, Loadout } from '../types.js';
 import { CONTENT_VERSION, ELEMENT_BY_ID, VESSEL_BY_ID, RELIC_BY_ID, ENEMY_BY_ID, ENCOUNTER_BY_ID, RESEARCH, REACTION_BY_ID, STATUSES } from '../data/content.js';
@@ -9,7 +10,8 @@ function team(value: unknown): Loadout[] {
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > 5 || new Set(raw.map(s => s?.vessel)).size !== raw.length) throw new Error();
   return raw.map(s => {
     if (!s || !VESSEL_BY_ID[s.vessel] || !RELIC_BY_ID[s.relic] || !Array.isArray(s.elements) || s.elements.length !== 2 || s.elements.some(id => !ELEMENT_BY_ID[id])) throw new Error();
-    return { ...(validAbilities(s.abilities) ? { abilities: [...s.abilities] } : {}), vessel: s.vessel, elements: [...s.elements], relic: s.relic, targeting: ['front', 'weakest', 'reaction'].includes(s.targeting) ? s.targeting : 'front', priority: ['core', 'alternate', 'reaction'].includes(s.priority) ? s.priority : 'reaction', ...(s.passive ? { passive: PASSIVES.some(p => p.id === s.passive) ? s.passive : 'none' } : {}), ...(s.equipment ? { equipment: Object.fromEntries(Object.entries(s.equipment).filter(([slot, id]) => EQUIPMENT.some(e => e.slot === slot && e.id === id))) } : {}), ...(Array.isArray(s.reactionPriority) ? { reactionPriority: s.reactionPriority.filter(id => REACTION_BY_ID[id]).slice(0, 10) } : {}) };
+    if (s.abilities !== undefined && !validAbilities(s.abilities, Infinity, 3)) throw new Error();
+    return { ...(validAbilities(s.abilities, Infinity, 3) ? { abilities: [...s.abilities] } : {}), vessel: s.vessel, elements: [...s.elements], relic: s.relic, targeting: ['front', 'weakest', 'reaction'].includes(s.targeting) ? s.targeting : 'front', priority: ['core', 'alternate', 'reaction'].includes(s.priority) ? s.priority : 'reaction', ...(s.passive ? { passive: PASSIVES.some(p => p.id === s.passive) ? s.passive : 'none' } : {}), ...(s.equipment ? { equipment: Object.fromEntries(Object.entries(s.equipment).filter(([slot, id]) => EQUIPMENT.some(e => e.slot === slot && e.id === id))) } : {}), ...(Array.isArray(s.reactionPriority) ? { reactionPriority: s.reactionPriority.filter(id => REACTION_BY_ID[id]).slice(0, 10) } : {}) };
   });
 }
 export function normalizeReplay(value: unknown): BattleConfig | null {
@@ -30,6 +32,7 @@ export function normalizeReplay(value: unknown): BattleConfig | null {
     } else if (!ENCOUNTER_BY_ID[config.encounterId]) return null;
     if (raw.opponentTeam) config.opponentTeam = team(raw.opponentTeam);
     if (raw.normalized) config.normalized = true;
+    if (!config.normalized && config.team.some(s => s.abilities !== undefined && !validAbilities(s.abilities, Infinity, abilitySlots(config.research), config.research))) return null;
     if (raw.startingHealth) {
       if (!Array.isArray(raw.startingHealth) || raw.startingHealth.length !== config.team.length || raw.startingHealth.some(n => !numeric(n, 1))) return null;
       config.startingHealth = [...raw.startingHealth];

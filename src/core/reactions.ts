@@ -11,7 +11,15 @@ export function conditionsMet(conditions: Conditions = {}, context: ReactionCont
     && (conditions.minimumEnemies === undefined || (context.enemyCount ?? 0) >= conditions.minimumEnemies)
     && (conditions.requiredTags === undefined || conditions.requiredTags.every(tag => context.tags?.includes(tag)))
     && (conditions.mastery === undefined || Object.entries(conditions.mastery).every(([id, level]) => (context.mastery?.[id] ?? 0) >= level))
+    && (!conditions.research || conditions.research.every(id => context.research?.includes(id)))
     && (conditions.shielded === undefined || conditions.shielded === Boolean(context.shielded));
+}
+
+// Explicit player choices always precede content priorities, even in expansion packs.
+export function compareReactionPriority(a: ReactionDefinition, b: ReactionDefinition, preferred: readonly string[] = []) {
+  const ai = preferred.indexOf(a.id), bi = preferred.indexOf(b.id);
+  if (ai >= 0 || bi >= 0) return ai < 0 ? 1 : bi < 0 ? -1 : ai - bi;
+  return b.priority - a.priority || a.id.localeCompare(b.id);
 }
 
 export class ReactionEngine {
@@ -34,6 +42,10 @@ export class ReactionEngine {
 
   resolve(a: string, b: string, context: ReactionContext = {}) {
     return (this.byPair.get(pairKey(a, b)) ?? []).find(rule => conditionsMet(rule.conditions, context)) ?? null;
+  }
+
+  matching(a: string, b: string, context: ReactionContext = {}) {
+    return (this.byPair.get(pairKey(a, b)) ?? []).filter(rule => conditionsMet(rule.conditions, context));
   }
 
   candidates(element: string) { return this.byElement.get(element) ?? []; }

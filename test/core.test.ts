@@ -8,7 +8,7 @@ import { normalizeSave, parseSave, exportSave, loadPlayer, savePlayer, SAVE_KEY,
 
 test('all content references are valid', () => assert.deepEqual(validateContent(), []));
 for (const rule of REACTIONS) test('recipe is deterministic and unordered: ' + rule.id, () => {
-  const context = { environment: rule.conditions?.environment, statuses: rule.conditions?.statuses, mastery: rule.conditions?.mastery };
+  const context = { environment: rule.conditions?.environment, statuses: rule.conditions?.statuses, mastery: rule.conditions?.mastery, research: rule.conditions?.research, healthRatio: rule.conditions?.healthBelow === undefined ? undefined : rule.conditions.healthBelow - .01, enemyCount: rule.conditions?.minimumEnemies, tags: rule.conditions?.requiredTags, shielded: rule.conditions?.shielded };
   assert.equal(resolveExperiment(...rule.inputs, context)?.output, rule.output);
   assert.deepEqual(resolveExperiment(rule.inputs[1], rule.inputs[0], context)?.effects, rule.effects);
 });

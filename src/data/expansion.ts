@@ -1,3 +1,4 @@
+import { GUARDIANS } from './guardians.js';
 import type { Effect, ElementRow, ReactionDraft, UnitDefinition, Encounter } from '../types.js';
 import { CHAPTER_MEMORIES } from './story.js';
 // Authored relationships and encounters. No executable gameplay logic lives in this file.
@@ -102,12 +103,7 @@ export const EXTRA_ENEMIES = ([
   ['gravity-well', 'Gravity Well', 'slime', 300, 24, 25, ['gravity', 'void']],
 ] satisfies [string,string,string,number,number,number,string[]][]).map(([id, name, shape, hp, attack, armor, elements]) => ({ id, name, shape, hp, attack, armor, elements, interval: 2.5, tags: [elements[0]] }));
 
-export const EXTRA_BOSSES: UnitDefinition[] = [
-  { id: 'plague-mother', name: 'The Plague Mother', shape: 'keeper', hp: 850, attack: 40, armor: 22, interval: 2.5, elements: ['toxic-growth', 'poison'], immunities: ['poison'], tags: ['boss', 'toxic'], weaknesses: [{ status: 'burn', armorMultiplier: .3 }], phases: [{ below: .5, attackMultiplier: 1.2, intervalMultiplier: .85, label: 'The garden hungers', effects: [{ type: 'summon', enemy: 'briarling', scale: .4 }] }] },
-  { id: 'tide-empress', name: 'The Tide Empress', shape: 'sylph', hp: 800, attack: 42, armor: 28, interval: 2.2, elements: ['water', 'blizzard'], immunities: ['freeze'], tags: ['boss', 'water'], weaknesses: [{ status: 'conductive', armorMultiplier: .25 }], phases: [{ below: .4, attackMultiplier: 1.3, intervalMultiplier: .8, label: 'The undertow rises' }] },
-  { id: 'tempest-titan', name: 'Tempest Titan', shape: 'golem', hp: 900, attack: 44, armor: 30, interval: 2.3, elements: ['thunderstorm', 'wind'], immunities: ['shock'], tags: ['boss', 'weather'], weaknesses: [{ status: 'root', armorMultiplier: .2 }], phases: [{ below: .5, attackMultiplier: 1.2, intervalMultiplier: .8, label: 'Eye of the storm' }] },
-  { id: 'eclipse-sovereign', name: 'Eclipse Sovereign', shape: 'king', hp: 950, attack: 45, armor: 32, interval: 2.5, elements: ['eclipse', 'void'], immunities: ['blind'], tags: ['boss', 'dark'], weaknesses: [{ status: 'resistance-break', armorMultiplier: .2 }], phases: [{ below: .5, attackMultiplier: 1.25, intervalMultiplier: .8, label: 'The last light fades' }] },
-];
+export const EXTRA_BOSSES: UnitDefinition[] = GUARDIANS;
 
 export const REGIONS = [
   { id: 'first-flame', name: 'The First Flame', elements: ['fire', 'earth'], environment: 'forest', enemies: ['imp', 'sentinel', 'iron-husk'], boss: 'molten-king', lore: 'The furnaces never went cold. Someone is still tending them.', unlock: 'metal' },

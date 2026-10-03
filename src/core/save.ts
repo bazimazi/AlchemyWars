@@ -1,9 +1,11 @@
+import { experimentContext, TUTORIAL_STEPS, utcDay } from './learning.js';
+import { abilitySlots, hasResearch } from './research.js';
 import { validAbilities } from '../data/units.js';
 import { normalizeChains } from './codex.js';
 import type { Player, Loadout } from '../types.js';
 export type SaveStorage = Pick<Storage, 'getItem' | 'setItem'>;
 import { normalizeReplay } from './replay.js';
-import { REACTION_BY_ID, VESSEL_BY_ID, RESEARCH, ENCOUNTER_BY_ID, ENEMY_BY_ID } from '../data/content.js';
+import { REACTION_BY_ID, VESSEL_BY_ID, RESEARCH, ENCOUNTER_BY_ID, ENEMY_BY_ID, ELEMENT_BY_ID, REACTIONS } from '../data/content.js';
 import { createPlayer, unlockedRelics } from './progression.js';
 import { TALENTS, EQUIPMENT, SPECIALIZATIONS, QUESTS, ACHIEVEMENTS, PASSIVES, COSMETICS } from '../data/systems.js';
 import { normalizeRun } from './modes.js';
@@ -25,6 +27,7 @@ export function normalizeSave(value: unknown): Player {
   for (const key of ['essence', 'shards', 'runsWon', 'endlessBest', 'highestChain'] as const) player[key] = integer(raw[key]);
   for (const [key, definitions] of [['talents', TALENTS], ['equipment', EQUIPMENT], ['quests', QUESTS], ['achievements', ACHIEVEMENTS], ['cosmetics', COSMETICS]] as const) player[key] = list(raw[key], id => definitions.some(d => d.id === id));
   if (!player.cosmetics.includes('observatory')) player.cosmetics.unshift('observatory');
+  player.achievementClaims = list(raw.achievementClaims, id => player.achievements.includes(id));
   player.theme = player.cosmetics.includes(raw.theme) ? raw.theme : 'observatory';
   player.dailyClaims = list(raw.dailyClaims, id => /^[a-z0-9-]+:[0-9-]+$/.test(id), 1000);
   player.analytics = Array.isArray(raw.analytics) ? raw.analytics.filter(e => e && typeof e.name === 'string' && Number.isFinite(e.at)).slice(-1000).map(e => ({ ...e, name: e.name.slice(0, 80) })) : [];
@@ -33,23 +36,24 @@ export function normalizeSave(value: unknown): Player {
   player.owned = [...player.owned, ...player.discoveries.map(id => REACTION_BY_ID[id].output)];
   player.mastery = record(raw.mastery, id => player.owned.includes(id));
   player.evolution = Object.fromEntries(Object.entries(record(raw.evolution, id => player.owned.includes(id))).map(([id, level]) => [id, Math.min(3, level)]));
-  player.specializations = Object.fromEntries(Object.entries(raw.specializations ?? {}).filter(([id, value]) => player.owned.includes(id) && SPECIALIZATIONS.some(s => s.id === value)));
+  player.specializations = Object.fromEntries(Object.entries(raw.specializations ?? {}).filter(([id, value]) => player.owned.includes(id) && player.evolution[id] && SPECIALIZATIONS.some(s => s.id === value && (!s.tags || s.tags.some(tag => ELEMENT_BY_ID[id].tags.includes(tag))))));
   player.reactionWins = record(raw.reactionWins, id => player.discoveries.includes(id));
   player.discoveryDates = Object.fromEntries(Object.entries(raw.discoveryDates ?? {}).filter(([id]) => player.discoveries.includes(id)).map(([id, at]) => [id, integer(at, 0, Number.MAX_SAFE_INTEGER)]));
   player.reactionUsage = record(raw.reactionUsage, id => player.discoveries.includes(id));
   player.research = list(raw.research, id => RESEARCH.some(r => r.id === id));
+  player.equipment = player.equipment.filter(id => hasResearch(player.research, EQUIPMENT.find(e => e.id === id)?.requiresResearch));
   player.owned.push(...RESEARCH.filter(r => player.research.includes(r.id) && r.unlockElement).map(r => r.unlockElement!));
   player.favorites = list(raw.favorites, id => player.owned.includes(id));
   player.campaign = list(raw.campaign, id => Boolean(ENCOUNTER_BY_ID[id]));
   player.owned = [...new Set([...player.owned, ...player.campaign.map(id => ENCOUNTER_BY_ID[id].unlockElement).filter((id): id is string => !!id)])];
   player.evolution = Object.fromEntries(Object.entries(record(raw.evolution, id => player.owned.includes(id))).map(([id, level]) => [id, Math.min(3, level)]));
-  player.specializations = Object.fromEntries(Object.entries(raw.specializations ?? {}).filter(([id, value]) => player.owned.includes(id) && SPECIALIZATIONS.some(s => s.id === value)));
+  player.specializations = Object.fromEntries(Object.entries(raw.specializations ?? {}).filter(([id, value]) => player.owned.includes(id) && player.evolution[id] && SPECIALIZATIONS.some(s => s.id === value && (!s.tags || s.tags.some(tag => ELEMENT_BY_ID[id].tags.includes(tag))))));
   player.favorites = list(raw.favorites, id => player.owned.includes(id));
   player.mastery = record(raw.mastery, id => player.owned.includes(id));
   player.claimedBattles = list(raw.claimedBattles, id => id.length < 100);
   player.hints = record(raw.hints, id => Boolean(REACTION_BY_ID[id]));
   for (const key of Object.keys(player.settings) as (keyof Player["settings"])[]) if (typeof raw.settings?.[key] === 'boolean') player.settings[key] = raw.settings[key];
-  if (Array.isArray(raw.history)) player.history = raw.history.filter(h => h && Array.isArray(h.inputs) && h.inputs.length === 2 && h.inputs.every(id => player.owned.includes(id)) && (h.result === null || REACTION_BY_ID[h.result])).slice(0, 12).map(h => ({ inputs: [...h.inputs], result: h.result, environment: ['rain', 'storm', 'holy', 'night'].includes(h.environment) ? h.environment : 'neutral', frozen: h.frozen === true }));
+  if (Array.isArray(raw.history)) player.history = raw.history.filter(h => h && Array.isArray(h.inputs) && h.inputs.length === 2 && h.inputs.every(id => player.owned.includes(id)) && (h.result === null || REACTION_BY_ID[h.result])).slice(0, 12).map(h => ({ inputs: [...h.inputs], result: h.result, environment: ['rain', 'storm', 'holy', 'night'].includes(h.environment) ? h.environment : 'neutral', frozen: h.frozen === true, ...(h.context ? { context: experimentContext(h.context) } : {}) }));
   const allowedRelics = new Set(unlockedRelics(player).map(r => r.id));
   const used = new Set();
   const team: Loadout[] = [];
@@ -59,7 +63,7 @@ export function normalizeSave(value: unknown): Player {
     const fallback = VESSEL_BY_ID[slot.vessel];
     team.push({
       vessel: slot.vessel,
-      ...(validAbilities(slot.abilities, player.discoveries.length) ? { abilities: [...slot.abilities] } : {}),
+      ...(validAbilities(slot.abilities, player.discoveries.length, abilitySlots(player.research), player.research) ? { abilities: [...slot.abilities] } : {}),
       elements: Array.isArray(slot.elements) && slot.elements.length === 2 && slot.elements.every(id => player.owned.includes(id)) ? [...slot.elements] : [...fallback.elements],
       relic: allowedRelics.has(slot.relic) ? slot.relic : 'none',
       targeting: ['front', 'weakest', 'reaction'].includes(slot.targeting) ? slot.targeting : 'front',
@@ -75,6 +79,32 @@ export function normalizeSave(value: unknown): Player {
   player.vesselXp = Object.fromEntries(Object.entries(record(raw.vesselXp, id => Boolean(VESSEL_BY_ID[id]))).map(([id, xp]) => [id, Math.min(450, xp)]));
   player.chains = normalizeChains(raw.chains);
   player.creatures = list(raw.creatures, id => Boolean(ENEMY_BY_ID[id]), 1000);
+  for (const [id, rawKnowledge] of Object.entries(raw.creatureKnowledge ?? {})) {
+    const definition = ENEMY_BY_ID[id];
+    if (!definition || !player.creatures.includes(id) || !rawKnowledge || typeof rawKnowledge !== 'object') continue;
+    const behaviors = [...(definition.behaviors ?? []), ...(definition.phases ?? []).flatMap(p => p.behaviors ?? [])].map(b => b.id);
+    player.creatureKnowledge[id] = {
+      phases: Array.isArray(rawKnowledge.phases) ? [...new Set(rawKnowledge.phases.filter(n => Number.isInteger(n) && n > 0 && n <= (definition.phases?.length ?? 0)))].slice(0, 10) : [],
+      behaviors: list(rawKnowledge.behaviors, id => behaviors.includes(id), 80),
+    };
+  }
+  const learning = raw.learning;
+  player.learning.unassisted = list(learning?.unassisted, id => player.discoveries.includes(id));
+  player.learning.freshWins = list(learning?.freshWins, id => player.discoveries.includes(id));
+  player.learning.elementCasts = record(learning?.elementCasts, id => Boolean(ELEMENT_BY_ID[id]));
+  player.learning.elementWins = record(learning?.elementWins, id => Boolean(ELEMENT_BY_ID[id]));
+  player.learning.chainElements = integer(learning?.chainElements, 0, Object.keys(ELEMENT_BY_ID).length);
+  player.learning.tutorial = list(learning?.tutorial, id => (TUTORIAL_STEPS as readonly string[]).includes(id), 5);
+  if (!learning) {
+    if (player.discoveries.length) player.learning.tutorial.push('discovery');
+    if (player.team.some(s => s.elements.some(id => !ELEMENT_BY_ID[id].base))) player.learning.tutorial.push('formation');
+    if (player.battles) player.learning.tutorial.push('battle');
+  }
+  const daily = learning?.daily;
+  if (daily && typeof daily.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(daily.day) && Number.isFinite(Date.parse(daily.day)) && utcDay(Date.parse(daily.day)) === daily.day) player.learning.daily = {
+    day: daily.day, pairings: list(daily.pairings, pair => REACTIONS.some(r => [...r.inputs].sort().join('+') === pair), 200), won: daily.won === true,
+    longestChain: integer(daily.longestChain, 0, 12), claims: list(daily.claims, id => ['practice', 'victory', 'chain'].includes(id), 3),
+  };
   player.lastReplay = normalizeReplay(raw.lastReplay);
   return player;
 }

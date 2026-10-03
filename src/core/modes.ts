@@ -1,12 +1,13 @@
 import { recordBattleCodex } from './codex.js';
-import type { Player, BattleResult, BattleConfig, Run, RunReward, Encounter } from '../types.js';
-import { CONTENT_VERSION, ELEMENTS, ELEMENT_BY_ID, REACTIONS, ENEMIES, VESSELS } from '../data/content.js';
-import { RUN_UPGRADES, MUTATORS, BOSS_AFFIXES } from '../data/systems.js';
+import type { Player, BattleResult, BattleConfig, Run, RunReward, Encounter, Loadout } from '../types.js';
+import { CONTENT_VERSION, ELEMENTS, ELEMENT_BY_ID, REACTIONS, ENEMIES, VESSELS, RELICS } from '../data/content.js';
+import { RUN_UPGRADES, MUTATORS, BOSS_AFFIXES, PASSIVES } from '../data/systems.js';
 import { seededRandom } from './combat.js';
-import { resolveExperiment } from './reactions.js';
+import { reactionEngine } from './reactions.js';
 import { discover } from './progression.js';
 import { mergeModifiers } from './modifiers.js';
 import { refreshAchievements, track } from './meta.js';
+import { experimentContext } from './learning.js';
 
 const starters = ELEMENTS.filter(e => e.base && !e.unlockResearch).map(e => e.id);
 export const RUN_MODES = ['roguelite', 'endless', 'infinite-alchemy', 'draft'];
@@ -25,11 +26,21 @@ export function startRun(player: Player, mode: string, seed: number, elements: s
   const pool = mode === 'draft' ? rotation(now).draft : starters;
   if (!Array.isArray(elements) || elements.length < 1 || elements.length > (mode === 'draft' ? 3 : 2) || new Set(elements).size !== elements.length || elements.some(id => !pool.includes(id))) return false;
   const run: Run = {
-    mode, seed: seed >>> 0, floor: 1, state: 'battle', elements: [...elements], discoveries: [], upgrades: [], rewards: [],
+    mode, seed: seed >>> 0, floor: 1, state: 'battle', elements: [...elements], discoveries: [], upgrades: [], relics: [], passives: [], context: runContext({}), rewards: [],
     team: player.team.map((s, i) => ({ vessel: s.vessel, elements: [elements[i % elements.length], elements[(i + 1) % elements.length]], relic: 'none', targeting: 'front', priority: 'alternate', passive: 'none' })),
     health: [1, 1, 1, 1, 1], wins: 0, rewardClaimed: false, mutator: mode === 'infinite-alchemy' ? rotation(now).mutator.id : 'clear', period: rotation(now).week,
   };
   player.run = run; track(player, 'roguelite_started', { mode, seed }); return true;
+}
+/** Run-local rules advance every three floors and never depend on the current clock. */
+export function runFloorMutator(run: Run) {
+  if (!['endless', 'infinite-alchemy'].includes(run.mode)) return MUTATORS[0];
+  const pool = MUTATORS.filter(m => m.id !== 'clear' && m.id !== run.mutator);
+  const offset = Math.floor(seededRandom(run.seed + 1907)() * pool.length);
+  return pool[(offset + Math.floor((run.floor - 1) / 3)) % pool.length];
+}
+function runModifiers(run: Run) {
+  return mergeModifiers(...run.upgrades.map(id => RUN_UPGRADES.find(u => u.id === id)?.modifiers), MUTATORS.find(m => m.id === run.mutator)?.modifiers, runFloorMutator(run).modifiers);
 }
 export function runEncounter(run: Run): Encounter {
   const random = seededRandom(run.seed + run.floor * 733);
@@ -49,14 +60,22 @@ export function runBattleConfig(player: Player): BattleConfig {
   const encounter = runEncounter(run);
   return { contentVersion: CONTENT_VERSION, seed: (run.seed + run.floor * 1237) >>> 0, encounterId: encounter.id, encounter,
     team: structuredClone(run.team), research: [], mastery: {}, talents: [], evolution: {}, specializations: {}, startingHealth: [...run.health],
-    modifiers: mergeModifiers(...run.upgrades.map(id => RUN_UPGRADES.find(u => u.id === id)?.modifiers), MUTATORS.find(m => m.id === run.mutator)?.modifiers),
+    modifiers: runModifiers(run),
   };
 }
 function rewardChoices(run: Run): RunReward[] {
   const random = seededRandom(run.seed + run.floor * 1777);
   const element = choose(starters.filter(id => !run.elements.includes(id)), random, 1)[0];
-  const upgrades = choose(RUN_UPGRADES.filter(u => !run.upgrades.includes(u.id)), random, 2);
-  return ([element ? { type: 'element', id: element } : { type: 'rest', id: 'rest' }, ...upgrades.map(u => ({ type: 'upgrade' as const, id: u.id })), { type: 'rest', id: 'rest' }] satisfies RunReward[]).filter((r, i, all) => all.findIndex(x => x.id === r.id) === i).slice(0, 3);
+  const pool: RunReward[] = [
+    ...RUN_UPGRADES.filter(u => !run.upgrades.includes(u.id)).map(u => ({ type: 'upgrade' as const, id: u.id })),
+    ...RELICS.filter(r => r.id !== 'none' && !run.relics.includes(r.id)).map(r => ({ type: 'relic' as const, id: r.id })),
+    ...PASSIVES.filter(p => p.id !== 'none' && !run.passives.includes(p.id)).map(p => ({ type: 'passive' as const, id: p.id })),
+  ];
+  const result: RunReward[] = element ? [{ type: 'element', id: element }] : choose(pool, random, 1);
+  const remaining = pool.filter(r => !result.some(x => x.type === r.type && x.id === r.id));
+  const preferred = ['upgrade', 'relic', 'passive'][run.floor % 3];
+  result.push(...choose(remaining.filter(r => r.type === preferred).length ? remaining.filter(r => r.type === preferred) : remaining, random, 1));
+  return [...result, { type: 'rest', id: 'rest' }];
 }
 export function completeRunBattle(player: Player, battle: BattleResult) {
   const run = player.run;
@@ -73,24 +92,49 @@ export function completeRunBattle(player: Player, battle: BattleResult) {
 }
 export function chooseRunReward(player: Player, index: number) {
   const run = player.run;
-  if (!run || run.state !== 'reward' || !run.rewards[index]) return false;
+  if (!run || run.state !== 'reward' || !Number.isInteger(index) || index < 0 || !run.rewards[index]) return false;
   const choice = run.rewards[index];
-  if (choice.type === 'element') run.elements.push(choice.id);
-  if (choice.type === 'upgrade') run.upgrades.push(choice.id);
+  if (choice.type === 'element' && !run.elements.includes(choice.id)) run.elements.push(choice.id);
+  if (choice.type === 'upgrade' && !run.upgrades.includes(choice.id)) run.upgrades.push(choice.id);
+  if (choice.type === 'relic' && !run.relics.includes(choice.id)) run.relics.push(choice.id);
+  if (choice.type === 'passive' && !run.passives.includes(choice.id)) run.passives.push(choice.id);
   if (choice.type === 'rest') run.health = run.health.map(h => Math.min(1, Math.max(.25, h) + .35));
   run.floor++; run.state = 'battle'; run.rewards = []; return true;
 }
 export function runExperiment(player: Player, a: string, b: string) {
   const run = player.run;
   if (!run || !['battle', 'reward'].includes(run.state) || !run.elements.includes(a) || !run.elements.includes(b)) return null;
-  const rule = resolveExperiment(a, b, { environment: runEncounter(run).environment });
+  if (!ELEMENT_BY_ID[a]?.enabled || !ELEMENT_BY_ID[b]?.enabled) return null;
+  const disabled = runModifiers(run).disabledReactionTags ?? [];
+  const rule = reactionEngine.matching(a, b, { ...runContext(run.context), environment: runEncounter(run).environment, mastery: {}, research: [] }).find(r => !r.tags.some(tag => disabled.includes(tag))) ?? null;
   if (rule) { if (!run.elements.includes(rule.output)) run.elements.push(rule.output); if (!run.discoveries.includes(rule.id)) run.discoveries.push(rule.id); }
   return rule;
 }
 export function updateRunTeam(player: Player, index: number, elements: string[]) {
   const run = player.run;
-  if (!run || run.state !== 'battle' || !run.team[index] || !Array.isArray(elements) || elements.length !== 2 || elements.some(id => !run.elements.includes(id))) return false;
+  if (!run || run.state !== 'battle' || !Number.isInteger(index) || index < 0 || !run.team[index] || !Array.isArray(elements) || elements.length !== 2 || elements.some(id => !run.elements.includes(id))) return false;
   run.team[index].elements = [...elements]; return true;
+}
+function runContext(value: unknown) {
+  const context = { statuses: [], tags: [], ...experimentContext(value) };
+  delete context.environment;
+  return context;
+}
+export function updateRunScenario(player: Player, value: unknown) {
+  const run = player.run;
+  if (!run || !['battle', 'reward'].includes(run.state) || !value || typeof value !== 'object' || Array.isArray(value)) return false;
+  run.context = runContext(value); return true;
+}
+export function updateRunTactics(player: Player, index: number, patch: Partial<Loadout>) {
+  const run = player.run;
+  if (!run || run.state !== 'battle' || !Number.isInteger(index) || index < 0 || !run.team[index] || !patch || typeof patch !== 'object' || Array.isArray(patch)) return false;
+  if (Object.keys(patch).some(k => !['relic', 'passive', 'targeting', 'priority', 'reactionPriority'].includes(k))) return false;
+  if (patch.relic !== undefined && patch.relic !== 'none' && !run.relics.includes(patch.relic)) return false;
+  if (patch.passive !== undefined && patch.passive !== 'none' && !run.passives.includes(patch.passive)) return false;
+  if (patch.targeting !== undefined && !['front', 'weakest', 'reaction'].includes(patch.targeting)) return false;
+  if (patch.priority !== undefined && !['alternate', 'reaction', 'core'].includes(patch.priority)) return false;
+  if (patch.reactionPriority !== undefined && (!Array.isArray(patch.reactionPriority) || patch.reactionPriority.length > 10 || new Set(patch.reactionPriority).size !== patch.reactionPriority.length || patch.reactionPriority.some(id => !run.discoveries.includes(id)))) return false;
+  Object.assign(run.team[index], structuredClone(patch)); return true;
 }
 export function retireRun(player: Player) {
   if (!player.run || !['battle', 'reward'].includes(player.run.state)) return false;
@@ -118,9 +162,15 @@ export function normalizeRun(value: unknown): Run | null {
   if (!raw || !RUN_MODES.includes(raw.mode) || !Number.isInteger(raw.seed) || !Number.isInteger(raw.floor) || raw.floor < 1 || raw.floor > 10000 || !['battle', 'reward', 'complete', 'defeat', 'retired'].includes(raw.state)) return null;
   if (!Array.isArray(raw.elements) || !raw.elements.length || raw.elements.some(id => !ELEMENT_BY_ID[id]) || !Array.isArray(raw.team) || raw.team.length !== 5 || raw.team.some(s => !s || !VESSELS.some(v => v.id === s.vessel) || !Array.isArray(s.elements) || s.elements.length !== 2 || s.elements.some(id => !raw.elements.includes(id)))) return null;
   if (!Array.isArray(raw.health) || raw.health.length !== 5 || raw.health.some(h => !Number.isFinite(h) || h < 0 || h > 1)) return null;
-  const run = { ...structuredClone(raw), seed: raw.seed >>> 0, upgrades: [...new Set((raw.upgrades ?? []).filter(id => RUN_UPGRADES.some(u => u.id === id)))], discoveries: [...new Set((raw.discoveries ?? []).filter(id => REACTIONS.some(r => r.id === id)))], wins: Math.max(0, Math.min(raw.floor, Number(raw.wins) || 0)), rewardClaimed: raw.rewardClaimed === true, mutator: MUTATORS.some(m => m.id === raw.mutator) ? raw.mutator : 'clear' };
+  const known = (value: unknown, ids: string[]) => Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === 'string' && ids.includes(id)))] : [];
+  const run: Run = { mode: raw.mode, seed: raw.seed >>> 0, floor: raw.floor, state: raw.state, elements: [...new Set(raw.elements)],
+    upgrades: known(raw.upgrades, RUN_UPGRADES.map(u => u.id)), discoveries: known(raw.discoveries, REACTIONS.map(r => r.id)),
+    relics: known(raw.relics, RELICS.filter(r => r.id !== 'none').map(r => r.id)), passives: known(raw.passives, PASSIVES.filter(p => p.id !== 'none').map(p => p.id)),
+    context: runContext(raw.context), team: [], rewards: [], health: [...raw.health],
+    wins: typeof raw.wins === 'number' && Number.isFinite(raw.wins) ? Math.max(0, Math.min(raw.floor, Math.floor(raw.wins))) : 0,
+    rewardClaimed: raw.rewardClaimed === true, mutator: MUTATORS.some(m => m.id === raw.mutator) ? raw.mutator : 'clear', period: Number.isInteger(raw.period) ? raw.period : 0 };
   if (new Set(raw.team.map(s => s.vessel)).size !== 5) return null;
-  run.team = raw.team.map(s => ({ vessel: s.vessel, elements: [...s.elements], relic: 'none', passive: 'none', targeting: ['front', 'weakest', 'reaction'].includes(s.targeting) ? s.targeting : 'front', priority: ['alternate', 'reaction', 'core'].includes(s.priority) ? s.priority : 'alternate' }));
+  run.team = raw.team.map(s => ({ vessel: s.vessel, elements: [...s.elements], relic: run.relics.includes(s.relic) ? s.relic : 'none', passive: run.passives.includes(s.passive ?? '') ? s.passive : 'none', targeting: ['front', 'weakest', 'reaction'].includes(s.targeting) ? s.targeting : 'front', priority: ['alternate', 'reaction', 'core'].includes(s.priority) ? s.priority : 'alternate', ...(Array.isArray(s.reactionPriority) ? { reactionPriority: known(s.reactionPriority, run.discoveries).slice(0, 10) } : {}) }));
   run.rewards = run.state === 'reward' ? rewardChoices(run) : [];
   return run;
 }

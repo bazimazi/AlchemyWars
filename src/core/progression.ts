@@ -1,3 +1,5 @@
+import { hintText, experimentContext, recordExperimentLearning, markTutorial } from './learning.js';
+import { abilitySlots, hasResearch } from './research.js';
 import { validAbilities } from '../data/units.js';
 import { recordBattleCodex } from './codex.js';
 import type { Player, ReactionDefinition, ReactionContext, BattleResult, Loadout } from '../types.js';
@@ -22,41 +24,50 @@ export const playerLevel = (player: Player) => 1 + Math.floor(player.xp / BALANC
 export const masteryLevel = (player: Player, id: string) => Math.min(10, Math.floor((player.mastery[id] ?? 0) / BALANCE.masteryThreshold));
 export const unlockedRelics = (player: Player) => RELICS.filter(r => !r.discoveries || r.discoveries <= player.discoveries.length);
 
-export function discover(player: Player, rule: ReactionDefinition) {
+export function discover(player: Player, rule: ReactionDefinition, now = Date.now()) {
   if (player.discoveries.includes(rule.id)) return false;
   player.discoveries.push(rule.id);
   if (!player.owned.includes(rule.output)) player.owned.push(rule.output);
   player.xp += BALANCE.discoveryXp;
   player.knowledge += BALANCE.discoveryKnowledge + talentModifier(player, 'discoveryKnowledge');
-  player.discoveryDates[rule.id] = Date.now();
-  track(player, 'reaction_discovered', { id: rule.id });
-  track(player, 'element_discovered', { id: rule.output });
+  player.discoveryDates[rule.id] = now;
+  if (!player.hints[rule.id]) player.learning.unassisted.push(rule.id);
+  track(player, 'reaction_discovered', { id: rule.id }, now);
+  track(player, 'element_discovered', { id: rule.output }, now);
   return true;
 }
 
-export function experiment(player: Player, a: string, b: string, context: ReactionContext = {}) {
+export function experiment(player: Player, a: string, b: string, context: ReactionContext = {}, now = Date.now()) {
+  context = experimentContext(context);
   if (!player.owned.includes(a) || !player.owned.includes(b)) return { ok: false, error: 'Choose two elements from your collection.' };
-  const rule = resolveExperiment(a, b, { ...context, mastery: Object.fromEntries(Object.entries(player.mastery).map(([id, xp]) => [id, Math.floor(xp / BALANCE.masteryThreshold)])) });
+  const rule = resolveExperiment(a, b, { ...context, research: player.research, mastery: Object.fromEntries(Object.entries(player.mastery).map(([id, xp]) => [id, Math.floor(xp / BALANCE.masteryThreshold)])) });
   player.experiments++;
-  track(player, 'experiment_attempted', { inputs: [a, b] });
-  if (!rule) track(player, 'experiment_failed');
-  const isNew = rule ? discover(player, rule) : false;
+  track(player, 'experiment_attempted', { inputs: [a, b] }, now);
+  if (!rule) track(player, 'experiment_failed', {}, now);
+  const previousDiscoveries = player.discoveries.length;
+  const isNew = rule ? discover(player, rule, now) : false;
+  recordExperimentLearning(player, rule, now);
+  if (isNew) {
+    markTutorial(player, 'discovery');
+    if (previousDiscoveries && rule && !player.hints[rule.id] && player.learning.tutorial.includes('reflection')) markTutorial(player, 'independent');
+  }
   for (const id of new Set([a, b])) player.mastery[id] = (player.mastery[id] ?? 0) + BALANCE.repeatXp;
-  const entry = { inputs: [a, b], result: rule?.id ?? null, environment: context.environment ?? 'neutral', frozen: (Array.isArray(context.statuses) ? context.statuses : [...(context.statuses ?? [])]).includes('freeze') ?? false };
+  const entry = { context, inputs: [a, b], result: rule?.id ?? null, environment: context.environment ?? 'neutral', frozen: (Array.isArray(context.statuses) ? context.statuses : [...(context.statuses ?? [])]).includes('freeze') ?? false };
   player.history = [entry, ...player.history].slice(0, 12);
   refreshAchievements(player);
   return { ok: true, rule, isNew };
 }
 
 export function requestHint(player: Player) {
-  const rule = [...reactionEngine.byPair.values()].flat().find(r => !player.discoveries.includes(r.id) && r.inputs.every(id => player.owned.includes(id)));
+  const rule = [...reactionEngine.byPair.values()].flat().find(r => !player.discoveries.includes(r.id) && r.inputs.every(id => player.owned.includes(id)) && hasResearch(player.research, r.conditions?.research));
   if (!rule) return { ok: false, error: 'Every accessible reaction is discovered. Explore your derived elements.' };
+  if ((player.hints[rule.id] ?? 0) >= 4) return { ok: true, text: hintText(rule, 4) };
   if (player.knowledge < BALANCE.hintCost) return { ok: false, error: 'You need 2 knowledge. Discover a reaction or win a battle.' };
   player.knowledge -= BALANCE.hintCost;
-  const stage = Math.min(3, (player.hints[rule.id] ?? 0) + 1);
+  const stage = Math.min(4, (player.hints[rule.id] ?? 0) + 1);
   player.hints[rule.id] = stage;
   track(player, 'hint_used', { id: rule.id, stage });
-  return { ok: true, text: stage === 1 ? rule.hint : stage === 2 ? 'Begin with ' + ELEMENT_BY_ID[rule.inputs[0]].name + '. ' + rule.hint : rule.inputs.map(id => ELEMENT_BY_ID[id].name).join(' + ') + (rule.conditions?.environment ? ' in ' + rule.conditions.environment + '.' : rule.conditions?.statuses ? ' against a frozen target.' : '.') };
+  return { ok: true, text: hintText(rule, stage) };
 }
 
 export function updateLoadout(player: Player, index: unknown, value: unknown) {
@@ -64,13 +75,14 @@ export function updateLoadout(player: Player, index: unknown, value: unknown) {
   if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index >= player.team.length) return false;
   const slot = player.team[index];
   if (!slot || !patch || typeof patch !== 'object' || Array.isArray(patch) || Object.values(patch).some(v => v === null) || Object.keys(patch).some(key => !['elements', 'relic', 'targeting', 'priority', 'reactionPriority', 'abilities'].includes(key))) return false;
-  if ('abilities' in patch && !validAbilities(patch.abilities, player.discoveries.length)) return false;
+  if ('abilities' in patch && !validAbilities(patch.abilities, player.discoveries.length, abilitySlots(player.research), player.research)) return false;
   if (patch.reactionPriority && (!Array.isArray(patch.reactionPriority) || patch.reactionPriority.length > 10 || patch.reactionPriority.some(id => !player.discoveries.includes(id)))) return false;
   if ('elements' in patch && (!Array.isArray(patch.elements) || patch.elements.length !== 2 || patch.elements.some(id => !player.owned.includes(id)))) return false;
   if ('relic' in patch && !unlockedRelics(player).some(r => r.id === patch.relic)) return false;
   if ('targeting' in patch && !['front', 'weakest', 'reaction'].includes(patch.targeting ?? "")) return false;
   if ('priority' in patch && !['reaction', 'alternate', 'core'].includes(patch.priority ?? "")) return false;
   Object.assign(slot, patch);
+  if (slot.elements.some(id => !ELEMENT_BY_ID[id].base)) markTutorial(player, 'formation');
   return true;
 }
 
@@ -105,7 +117,6 @@ export function claimBattle(player: Player, battle: BattleResult, battleId: stri
   player.claimedBattles.push(battleId);
   player.battles++;
   for (const slot of battle.config.team) player.vesselXp[slot.vessel] = Math.min(450, (player.vesselXp[slot.vessel] ?? 0) + (battle.outcome === 'victory' ? 10 : 3));
-  recordBattleCodex(player, battle);
   player.highestChain = Math.max(player.highestChain, battle.report.highestChain);
   track(player, battle.outcome === 'victory' ? 'battle_won' : 'battle_lost', { encounter: encounter.id, duration: battle.duration });
   player.lastReplay = structuredClone(battle.config);
@@ -130,11 +141,12 @@ export function claimBattle(player: Player, battle: BattleResult, battleId: stri
     if (!player.campaign.includes(encounter.id)) player.campaign.push(encounter.id);
     if (encounter.unlockElement && !player.owned.includes(encounter.unlockElement)) player.owned.push(encounter.unlockElement);
   }
+  recordBattleCodex(player, battle);
   refreshAchievements(player);
   return { claimed: true, discoveries };
 }
 
 export function validateTeam(player: Player) {
   return player.team.length === 5 && new Set(player.team.map(s => s.vessel)).size === 5
-    && player.team.every(s => VESSEL_BY_ID[s.vessel] && s.elements.length === 2 && s.elements.every(id => player.owned.includes(id)) && RELIC_BY_ID[s.relic]);
+    && player.team.every(s => VESSEL_BY_ID[s.vessel] && s.elements.length === 2 && s.elements.every(id => player.owned.includes(id)) && RELIC_BY_ID[s.relic] && (s.abilities === undefined || validAbilities(s.abilities, player.discoveries.length, abilitySlots(player.research), player.research)));
 }

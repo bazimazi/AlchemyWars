@@ -1,3 +1,6 @@
+import { validateUnitMechanics } from './unit-rules.js';
+import { MOLTEN_KING } from './guardians.js';
+import { RESEARCH_UNLOCKS, RESEARCH_RECIPES } from './research.js';
 import { MYTHIC_REACTIONS, CONTINUATIONS } from './continuations.js';
 import type { ElementRow, Effect, ReactionDefinition, ReactionDraft, ElementDefinition, StatusDefinition, UnitDefinition, Relic, Research, Encounter } from '../types.js';
 // Content is separate from the engine. Every effect is interpreted by a reusable primitive.
@@ -7,7 +10,7 @@ const status = (id: string, duration: number, intensity = 1, extra: { recipient?
 const damage = (scale: number, extra: { recipient?: Effect["recipient"]; stacks?: number } = {}): Effect => ({ type: 'damage', scale, ...extra });
 const chain = (scale: number, count = 2): Effect => ({ type: 'chain', scale, count, status: 'shock', element: 'lightning' });
 
-export let CONTENT_VERSION = '0.4.0';
+export let CONTENT_VERSION = '0.8.0';
 export function setContentVersion(version: string) { CONTENT_VERSION = version; }
 export const BALANCE = {
   step: 0.25, maxTime: 90, maxChainDepth: 4, maxEventsPerAction: 80,
@@ -68,6 +71,7 @@ for (const [id, a, b, output, hint] of CONTINUATIONS) {
   const element = ELEMENT_BY_ID[output];
   REACTIONS.push({ ...meta, id, name: element.name + ' (' + id.replaceAll('-', ' ') + ')', inputs: [a, b], output, category: 'Continuation', color: element.color, icon: element.icon, tags: [...element.tags], hint, description: hint, rarity: 'Rare', priority: 0, cooldown: BALANCE.reactionCooldown, trigger: 'OnElementApplied', effects: structuredClone(element.effects) });
 }
+REACTIONS.push(...RESEARCH_RECIPES.map(r => ({ ...meta, output: r.id, rarity: 'Rare', priority: 12, cooldown: BALANCE.reactionCooldown, trigger: 'OnElementApplied', ...r })));
 export const REACTION_BY_ID: Record<string, ReactionDefinition> = Object.assign(Object.create(null), Object.fromEntries(REACTIONS.map(r => [r.id, r])));
 
 export const STATUSES: Record<string, StatusDefinition> = Object.fromEntries(([
@@ -106,24 +110,29 @@ export const ENEMIES: UnitDefinition[] = [
   { id: 'slime', name: 'Moss Slime', shape: 'slime', hp: 190, attack: 21, armor: 8, interval: 2.5, elements: ['nature', 'water'], tags: ['growth'] },
   { id: 'imp', name: 'Cinder Imp', shape: 'sprite', hp: 175, attack: 25, armor: 6, interval: 2.3, elements: ['fire', 'wind'], tags: ['heat'] },
   { id: 'sentinel', name: 'Ruin Sentinel', shape: 'golem', hp: 245, attack: 20, armor: 20, interval: 2.7, elements: ['earth', 'ice'], tags: ['armor'] },
-  { id: 'molten-king', name: 'The Molten King', shape: 'king', hp: 850, attack: 43, armor: 38, interval: 2.4, elements: ['fire', 'magma'], tags: ['boss', 'heat'], immunities: ['burn'], weaknesses: [{ status: 'wet', armorMultiplier: 0.35 }], phases: [{ below: 0.5, attackMultiplier: 1.25, intervalMultiplier: 0.9, label: 'The core awakens' }] },
+  MOLTEN_KING,
   ...EXTRA_ENEMIES, ...EXTRA_BOSSES,
   { id: 'ashling', name: 'Ashling', shape: 'sprite', hp: 210, attack: 25, armor: 11, interval: 2.4, elements: ['fire', 'spirit'], tags: ['heat'] },
 ].map(e => ({ ...meta, ...e }));
 export const ENEMY_BY_ID: Record<string, UnitDefinition> = Object.assign(Object.create(null), Object.fromEntries(ENEMIES.map(e => [e.id, e])));
 
-export const RELICS: Relic[] = [
-  { id: 'none', name: 'No relic', description: 'An open relic slot.', tags: [], modifiers: {} },
-  { id: 'flame-crown', name: 'Flame Crown', description: 'Burn lasts 2 seconds longer.', tags: ['heat'], discoveries: 2, modifiers: { statusDuration: { burn: 2 } } },
-  { id: 'storm-core', name: 'Storm Core', description: 'Chain effects reach one extra target.', tags: ['electricity'], discoveries: 4, modifiers: { chainTargets: 1 } },
-  { id: 'world-seed', name: 'World Seed', description: 'All healing is 25% stronger.', tags: ['growth'], discoveries: 6, modifiers: { healingMultiplier: 1.25 } },
-].map(r => ({ ...meta, ...r }));
+const relicDefinitions: Relic[] = [
+  { id: 'none', name: 'No relic', rarity: 'Common', description: 'An open relic slot.', tags: [], modifiers: {} },
+  { id: 'dew-glass', name: 'Dew Glass', rarity: 'Common', description: 'Wet persists for 1 extra second, giving elemental partners more time.', tags: ['water'], discoveries: 1, modifiers: { statusDuration: { wet: 1 } } },
+  { id: 'flame-crown', name: 'Flame Crown', rarity: 'Uncommon', description: 'Burn lasts 2 seconds longer.', tags: ['heat'], discoveries: 2, modifiers: { statusDuration: { burn: 2 } } },
+  { id: 'storm-core', name: 'Storm Core', rarity: 'Rare', description: 'Chain effects reach one extra target.', tags: ['electricity'], discoveries: 4, modifiers: { chainTargets: 1 } },
+  { id: 'world-seed', name: 'World Seed', rarity: 'Epic', description: 'All healing is 25% stronger.', tags: ['growth'], discoveries: 6, modifiers: { healingMultiplier: 1.25 } },
+  { id: 'eclipse-mirror', name: 'Eclipse Mirror', rarity: 'Legendary', description: 'Shadow strikes are 15% stronger. A focused artifact for an eclipse formation.', tags: ['dark'], discoveries: 20, modifiers: { tagPower: { dark: 1.15 } } },
+  { id: 'genesis-thread', name: 'Genesis Thread', rarity: 'Mythic', description: 'Chains can travel one level deeper. A tool for elaborate reaction paths rather than stronger individual strikes.', tags: ['chain'], discoveries: 50, modifiers: { chainDepth: 1 } },
+];
+export const RELICS = relicDefinitions.map(r => ({ ...meta, ...r }));
 export const RELIC_BY_ID: Record<string, Relic> = Object.assign(Object.create(null), Object.fromEntries(RELICS.map(r => [r.id, r])));
 export const RESEARCH: Research[] = [
-  { ...meta, id: 'resonance', name: 'Chain Resonance', icon: 'bolt', cost: 15, description: 'Reaction chains can travel one level deeper.', modifiers: { chainDepth: 1 } },
-  { ...meta, id: 'warding', name: 'Protective Binding', icon: 'shield', cost: 15, description: 'Every vessel enters battle with a 30-point shield.', modifiers: { startingShield: 30 } },
-  { ...meta, id: 'cultivation', name: 'Living Alchemy', icon: 'leaf', cost: 20, description: 'Regeneration lasts 3 seconds longer.', modifiers: { statusDuration: { regeneration: 3 } } },
-  ...ADVANCED_ELEMENTS.map(([id, name, , icon], i) => ({ ...meta, id: 'element-' + id, name: name + ' Theory', icon, cost: 15 + i * 3, description: 'Unlock ' + name + ' for experimentation and combat.', unlockElement: id, modifiers: {}, requires: i > 4 ? ['element-' + ADVANCED_ELEMENTS[i - 5][0]] : [] })),
+  { ...meta, id: 'resonance', branch: 'Reaction Science', name: 'Chain Resonance', icon: 'bolt', cost: 15, description: 'Reaction chains can travel one level deeper.', modifiers: { chainDepth: 1 } },
+  { ...meta, id: 'warding', branch: 'Combat Science', name: 'Protective Binding', icon: 'shield', cost: 15, description: 'Every vessel enters battle with a 30-point shield.', modifiers: { startingShield: 30 } },
+  { ...meta, id: 'cultivation', branch: 'Alchemy', name: 'Living Alchemy', icon: 'leaf', cost: 20, description: 'Regeneration lasts 3 seconds longer.', modifiers: { statusDuration: { regeneration: 3 } } },
+  ...ADVANCED_ELEMENTS.map(([id, name, , icon], i) => ({ ...meta, id: 'element-' + id, branch: 'Elemental Science' as const, name: name + ' Theory', icon, cost: 15 + i * 3, description: 'Unlock ' + name + ' for experimentation and combat.', unlockElement: id, modifiers: {}, requires: i > 4 ? ['element-' + ADVANCED_ELEMENTS[i - 5][0]] : [] })),
+  ...RESEARCH_UNLOCKS.map(r => ({ ...meta, ...r })),
 ];
 export const ENCOUNTERS: Encounter[] = [
   { ...meta, id: 'whispering-grove', name: 'Whispering Grove', region: 'The First Flame', label: '01', environment: 'forest', description: 'Something stirs beneath the roots of the old observatory.', tip: 'Watch how the Tide Sylph combines water and lightning.', enemies: ['slime', 'slime', 'sentinel', 'imp', 'slime'], gold: 30, knowledge: 4, xp: 30 },
@@ -147,12 +156,27 @@ export function validateContent() {
   for (const entry of [...ELEMENTS, ...REACTIONS]) {
     if (('inputs' in entry && entry.inputs.some(id => !ELEMENT_BY_ID[id])) || ('output' in entry && !ELEMENT_BY_ID[entry.output])) issues.push(`Unknown element in ${entry.id}`);
     if ('conditions' in entry && entry.conditions?.statuses?.some(id => !STATUSES[id])) issues.push(`Unknown condition in ${entry.id}`);
+    if ('conditions' in entry && entry.conditions?.research?.some(id => !RESEARCH.some(r => r.id === id))) issues.push(`Unknown research condition in ${entry.id}`);
     for (const effect of entry.effects) {
       if (!effectTypes.has(effect.type)) issues.push(`Unknown effect ${effect.type} in ${entry.id}`);
       if ('status' in effect && !STATUSES[effect.status]) issues.push(`Unknown status in ${entry.id}`);
     }
   }
-  for (const unit of [...VESSELS, ...ENEMIES]) if (unit.elements.some(id => !ELEMENT_BY_ID[id])) issues.push(`Unknown loadout in ${unit.id}`);
+  for (const unit of [...VESSELS, ...ENEMIES]) {
+    if (unit.elements.some(id => !ELEMENT_BY_ID[id])) issues.push(`Unknown loadout in ${unit.id}`);
+    issues.push(...validateUnitMechanics(unit, { element: id => typeof id === 'string' && Boolean(ELEMENT_BY_ID[id]), status: id => typeof id === 'string' && Object.hasOwn(STATUSES, id),
+      effects: value => {
+        if (!Array.isArray(value) || value.length > 12) { issues.push(`Invalid mechanics effects in ${unit.id}`); return; }
+        for (const e of value as Effect[]) if (!effectTypes.has(e.type) || 'status' in e && !STATUSES[e.status] || 'element' in e && !ELEMENT_BY_ID[e.element] || 'enemy' in e && !ENEMY_BY_ID[e.enemy]) issues.push(`Unknown mechanics effect in ${unit.id}`);
+      }, modifiers: value => { if (!value || typeof value !== 'object' || Array.isArray(value)) issues.push(`Invalid phase modifiers in ${unit.id}`); },
+    }).map(issue => `${unit.id}: ${issue}`));
+  }
   for (const encounter of ENCOUNTERS) if (encounter.enemies.some(id => !ENEMY_BY_ID[id])) issues.push(`Unknown enemy in ${encounter.id}`);
+  for (const r of RESEARCH) {
+    if (r.requires?.some(id => !RESEARCH.some(node => node.id === id)) || r.unlockElement && !ELEMENT_BY_ID[r.unlockElement]) issues.push(`Invalid research unlock in ${r.id}`);
+    if (r.abilitySlots !== undefined && r.abilitySlots !== 3) issues.push(`Invalid ability slot unlock in ${r.id}`);
+    const visit = (id: string, path: string[]): boolean => path.includes(id) || Boolean(RESEARCH.find(node => node.id === id)?.requires?.some(next => visit(next, [...path, id])));
+    if (visit(r.id, [])) issues.push(`Research prerequisite cycle in ${r.id}`);
+  }
   return issues;
 }

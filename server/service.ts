@@ -7,7 +7,7 @@ import { guildAction, guildContribution, guildView } from './guilds.js';
 import { competitionConfig, COMPETITIVE_MODES } from '../src/core/competition.js';
 import type { WorldData, User, Guild, BattleClaim, Session, WorldView, BattleRequest, SocialPayload, SocialResult, LiveConfig } from './types.js';
 import type { BattleConfig } from '../src/types.js';
-import { MUTATORS } from '../src/data/systems.js';
+import { MUTATORS, DISCOVERY_REWARDS } from '../src/data/systems.js';
 import { mergeModifiers } from '../src/core/modifiers.js';
 import { analyticsReport } from '../src/core/meta.js';
 import { normalizeSave } from '../src/core/save.js';
@@ -74,7 +74,7 @@ export async function createService(directory: string) {
       return store.transaction(db => {
         const user = authenticated(db, token);
         const active = Object.values(db.battles).some(b => b.userId === user.id && !b.claimed && b.kind === 'run');
-        requireThat(!active || !['start-run', 'retire-run', 'run-team', 'run-reward', 'run-experiment'].includes(command), 'Finish the active run battle first.');
+        requireThat(!active || !['start-run', 'retire-run', 'run-team', 'run-reward', 'run-experiment', 'run-tactics', 'run-scenario'].includes(command), 'Finish the active run battle first.');
         const result = executeCommand(user.player, command, payload, { seed: seed() });
         return { result, ...snapshot(user) };
       });
@@ -132,6 +132,7 @@ export async function createService(directory: string) {
         const user = authenticated(db, token), pending = db.battles[battleId];
         requireThat(pending && pending.userId === user.id, 'Battle not found.', 404);
         if (pending.claimed) return { result: pending.result, ...snapshot(user) };
+        requireThat(pending.config.contentVersion === CONTENT_VERSION, 'Battle content changed. Begin a new battle to use the current rules.', 409);
         // The client never submits damage, outcome, discoveries, currency, or a seed.
         const battle = simulateBattle(pending.config, { captureFrames: false });
         let result: BattleClaim = { outcome: battle.outcome, discoveries: [], duration: battle.duration };
@@ -184,7 +185,7 @@ export async function createService(directory: string) {
         }
         const memberGuild = db.guilds.find(g => g.id === pending.guildId && g.id === user.guildId);
         if (memberGuild && battle.outcome === 'victory' && rotation(pending.createdAt).week === rotation().week) guildContribution(memberGuild, user, 'battles');
-        recordBattleCodex(user.player, battle);
+        if (!['campaign', 'run'].includes(pending.kind) && !(['daily', 'weekly', 'festival'].includes(pending.kind) && result.claimed)) recordBattleCodex(user.player, battle);
         user.player.lastReplay = structuredClone(pending.config);
         pending.claimed = true; pending.result = result;
         return { result, ...snapshot(user) };
@@ -262,7 +263,11 @@ export async function createService(directory: string) {
             const rule = resolveExperiment(step[0], step[1]); requireThat(rule, 'A step has no stable reaction.'); available.add(rule.output); performed.add(rule.id);
           }
           requireThat(performed.has(challenge.target), 'The solution did not reach the target.');
-          if (!user.challengeClaims.includes(challenge.id)) { user.challengeClaims.push(challenge.id); user.player.xp += 20; user.player.knowledge += 3; }
+          if (!user.challengeClaims.includes(challenge.id)) {
+            user.challengeClaims.push(challenge.id); user.player.xp += DISCOVERY_REWARDS.challengeSolver.xp; user.player.knowledge += DISCOVERY_REWARDS.challengeSolver.knowledge;
+            const author = db.users.find(u => u.id === challenge.author);
+            if (author && author.id !== user.id) { author.player.xp += DISCOVERY_REWARDS.challengeCreatorXp; track(author.player, 'challenge_solved_by_player', { challenge: challenge.id }); }
+          }
         } else throw new ServiceError('Unknown community action.');
         return { result, ...snapshot(user) };
       });

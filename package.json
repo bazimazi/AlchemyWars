@@ -1,6 +1,6 @@
 {
   "name": "alchemy-wars",
-  "version": "0.4.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "description": "A discovery-first alchemy auto-battler with deterministic combat, campaign, roguelite and an authoritative shared world.",
@@ -15,6 +15,7 @@
     "test": "npm run compile && node --test .build/test/*.test.js",
     "build": "npm run compile && node .build/scripts/build.js",
     "balance": "npm run compile && node .build/scripts/balance.js",
+    "balance:runs": "npm run compile && node .build/scripts/run-balance.js",
     "test:e2e": "playwright test",
     "verify": "npm test && npm run build && npm run test:e2e"
   },

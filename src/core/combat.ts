@@ -1,8 +1,9 @@
 import { ObjectPool } from './pool.js';
+import { abilitySlots } from './research.js';
 import { ABILITIES, VESSEL_PROFILES, vesselLevel, validAbilities } from '../data/units.js';
 import type { Player, BattleConfig, CombatUnit, BattleEvent, BattleFrame, BattleReport, BattleResult, Effect, UnitDefinition, Loadout, Side, StatusModifier, Specialization, ChainContext, ElementApplication, ReactionDefinition } from '../types.js';
 import { BALANCE, CONTENT_VERSION, ELEMENT_BY_ID, VESSEL_BY_ID, ENEMY_BY_ID, ENCOUNTER_BY_ID, RELIC_BY_ID, RESEARCH, STATUSES } from '../data/content.js';
-import { reactionEngine } from './reactions.js';
+import { compareReactionPriority, reactionEngine } from './reactions.js';
 import { TALENTS, PASSIVES, EQUIPMENT, SPECIALIZATIONS, ENVIRONMENTS, AFFINITIES, MASTERY_REWARDS, BOSS_AFFIXES } from '../data/systems.js';
 import { mergeModifiers } from './modifiers.js';
 
@@ -37,7 +38,7 @@ function validateConfig(config: BattleConfig) {
     if (!VESSEL_BY_ID[slot.vessel] || ids.has(slot.vessel)) throw new Error('Invalid or duplicate vessel.');
     ids.add(slot.vessel);
     if (!Array.isArray(slot.elements) || slot.elements.length !== 2 || slot.elements.some(id => !ELEMENT_BY_ID[id]?.enabled)) throw new Error('Invalid element loadout.');
-    if (slot.abilities !== undefined && !validAbilities(slot.abilities)) throw new Error('Invalid ability slots.');
+    if (slot.abilities !== undefined && !validAbilities(slot.abilities, Infinity, config.normalized ? 3 : abilitySlots(config.research), config.normalized ? undefined : config.research)) throw new Error('Invalid ability slots.');
     if (!RELIC_BY_ID[slot.relic]) throw new Error('Unknown relic.');
   }
 }
@@ -52,7 +53,12 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
   const accountModifiers = config.normalized ? mergeModifiers(config.modifiers) : mergeModifiers(...RESEARCH.filter(r => config.research?.includes(r.id)).map(r => r.modifiers), ...TALENTS.filter(t => config.talents?.includes(t.id)).map(t => t.modifiers), config.modifiers);
   const masteryLevels = config.normalized ? {} : Object.fromEntries(Object.entries(config.mastery ?? {}).map(([id, xp]) => [id, Math.min(10, Math.floor(xp / BALANCE.masteryThreshold))]));
   const evolution = (id: string) => config.normalized ? 0 : config.evolution?.[id] ?? 0;
-  const specialization = (id: string): Partial<Specialization> => config.normalized ? {} : SPECIALIZATIONS.find(s => s.id === config.specializations?.[id]) ?? {};
+  const emptySpecialization: Partial<Specialization> = {};
+  const specializations = Object.fromEntries(Object.entries(config.normalized ? {} : config.specializations ?? {}).flatMap(([id, selected]) => {
+    const definition = evolution(id) && SPECIALIZATIONS.find(s => s.id === selected && (!s.tags || s.tags.some(tag => ELEMENT_BY_ID[id]?.tags.includes(tag))));
+    return definition ? [[id, definition]] : [];
+  }));
+  const specialization = (id: string): Partial<Specialization> => specializations[id] ?? emptySpecialization;
   const units: CombatUnit[] = [];
   let time = 0;
   const events: BattleEvent[] = [];
@@ -60,7 +66,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
   const triggerPool = new ObjectPool<Partial<BattleEvent>>(() => ({}), value => { for (const key of Object.keys(value) as (keyof BattleEvent)[]) delete value[key]; });
   const triggerQueue: Partial<BattleEvent>[] = [];
   const triggerNames: Record<string, string> = { start: 'OnBattleStart', end: 'OnBattleEnd', cast: 'OnAbilityCast', critical: 'OnCritical', hit: 'OnHit', status: 'OnStatusApplied', expired: 'OnStatusExpired', damage: 'OnDamageTaken', death: 'OnDeath', kill: 'OnKill', element: 'OnElementApplied', reaction: 'OnReaction', reactionChain: 'OnReactionChain', lowHealth: 'OnLowHealth' };
-  const report: BattleReport = { chains: [], damageByElement: {}, damageByUnit: {}, damageByReaction: {}, reactions: {}, reactionDamage: 0, totalDamage: 0, healing: 0, highestChain: 0, decisions: 0, guardedEvents: 0 };
+  const report: BattleReport = { units: {}, reactionSupport: {}, mechanics: {}, phases: [], chains: [], elementCasts: {}, damageByElement: {}, damageByUnit: {}, damageByReaction: {}, reactions: {}, reactionDamage: 0, totalDamage: 0, healing: 0, highestChain: 0, decisions: 0, guardedEvents: 0 };
   const emit = (type: string, fields: Partial<BattleEvent> = {}) => {
     if (events.length < BALANCE.maxLogEvents) events.push({ time, type, ...fields });
     if (triggerNames[type]) triggerQueue.push(Object.assign(triggerPool.acquire(), { trigger: triggerNames[type], type }, fields));
@@ -74,7 +80,8 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       armor: definition.armor, interval: definition.interval,
       elements: [...(slot.elements ?? definition.elements)], relic: slot.relic ?? 'none',
       targeting: slot.targeting ?? 'front', priority: slot.priority ?? 'reaction',
-      abilities: [...(slot.abilities ?? [])], passive: slot.passive ?? 'none', equipment: slot.equipment ?? {}, reactionPriority: slot.reactionPriority ?? [],
+      immunities: [...(definition.immunities ?? [])], behaviors: [...(definition.behaviors ?? [])],
+      abilities: (slot.abilities ?? []).slice(0, abilitySlots(config.research, config.normalized)), passive: slot.passive ?? 'none', equipment: slot.equipment ?? {}, reactionPriority: slot.reactionPriority ?? [],
       modifiers: mergeModifiers(environment.modifiers, side === 'ally' ? accountModifiers : config.normalized ? accountModifiers : {}, RELIC_BY_ID[slot.relic ?? 'none'].modifiers, ...EQUIPMENT.filter(e => Object.values(slot.equipment ?? {}).includes(e.id)).map(e => e.modifiers)),
       shield: 0,
       statuses: {}, residues: {}, cooldowns: {}, ready: 0.4 + position * 0.3,
@@ -87,6 +94,8 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
     unit.shield = unit.modifiers.startingShield ?? 0;
     if (side === 'ally' && evolution(unit.elements[0]) >= 3) unit.shield += Math.round(unit.maxHp * .1);
     if (side === 'ally' && config.startingHealth) unit.hp = Math.round(unit.maxHp * Math.min(1, Math.max(0, config.startingHealth[position] ?? 1)));
+    report.units[unit.id] = { damage: 0, damageTaken: 0, absorbed: 0, healing: 0, shield: 0, cleanses: 0, kills: 0, elementCasts: 0, abilityCasts: 0, reactions: 0 };
+    if (side === 'enemy') report.mechanics[unit.definitionId] ??= { phases: [], behaviors: [], counters: {} };
     units.push(unit);
     return unit;
   }
@@ -102,8 +111,10 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
   const recipient = (effect: Effect, source: CombatUnit, target: CombatUnit | undefined) => effect.recipient === 'source' ? source : effect.recipient === 'weakestAlly' ? weakest(alive(source.side)) : target;
   const relic = (unit: CombatUnit) => unit.modifiers;
 
+  const reactionSupport = (id: string) => report.reactionSupport[id] ??= { healing: 0, shield: 0, cleanses: 0, statuses: 0 };
+
   function applyStatus(target: CombatUnit | undefined, id: string, duration: number, intensity: number, source: CombatUnit, stacks = 1, reaction: boolean | string = false) {
-    if (!target || target.hp <= 0 || target.definition.immunities?.includes(id)) return;
+    if (!target || target.hp <= 0 || target.immunities.includes(id)) return;
     const definition = STATUSES[id];
     if (!definition) throw new Error('Unknown status: ' + id);
     const masteryBonus = source.side === 'ally' && !config.normalized && (config.mastery?.[source.elements[0]] ?? 0) >= MASTERY_REWARDS.durationLevel * BALANCE.masteryThreshold ? MASTERY_REWARDS.durationBonus : 0;
@@ -115,6 +126,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       stacks: Math.min(definition.maxStacks, (old?.stacks ?? 0) + stacks),
       source: source.id, power: source.attack, reaction,
     };
+    if (source.side === 'ally' && typeof reaction === 'string') reactionSupport(reaction).statuses++;
     emit('status', { source: source.id, target: target.id, status: id, stacks: target.statuses[id].stacks });
   }
 
@@ -136,6 +148,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
     const previousHp = target.hp;
     const dealt = Math.min(target.hp, raw - absorbed);
     target.hp -= dealt;
+    report.units[source.id].damage += dealt; report.units[target.id].damageTaken += dealt; report.units[target.id].absorbed += absorbed;
     if (source.side === 'ally') {
       report.totalDamage += dealt;
       report.damageByElement[element] = (report.damageByElement[element] ?? 0) + dealt;
@@ -150,22 +163,33 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       const reflect = modifier(target, 'reflect');
       if (reflect > 0 && source.hp > 0) dealDamage(target, source, dealt * reflect, element, false, true);
     }
-    if (target.hp === 0) { emit('death', { source: source.id, target: target.id, name: target.name }); emit('kill', { source: source.id, target: target.id }); }
+    if (target.hp === 0) { report.units[source.id].kills++; emit('death', { source: source.id, target: target.id, name: target.name }); emit('kill', { source: source.id, target: target.id, element }); }
     else if (previousHp > target.maxHp * .3 && target.hp <= target.maxHp * .3) emit('lowHealth', { source: source.id, target: target.id });
     const phases = target.definition.phases ?? [];
     while (target.hp > 0 && target.phase < phases.length && target.hp / target.maxHp <= phases[target.phase].below) {
       const phase = phases[target.phase++];
       target.attack *= phase.attackMultiplier;
       target.interval *= phase.intervalMultiplier;
-      emit('phase', { target: target.id, name: phase.label });
-      if (phase.effects) applyEffects(phase.effects, target, source, target.elements[0], { depth: 0, triggered: new Set() }, []);
+      if (phase.elements) { target.elements = [...phase.elements]; target.casts = 0; }
+      if (phase.immunities) { target.immunities = [...phase.immunities]; for (const id of target.immunities) if (target.statuses[id]) { delete target.statuses[id]; emit('expired', { target: target.id, status: id }); } }
+      if (phase.modifiers) target.modifiers = mergeModifiers(target.modifiers, phase.modifiers);
+      if (phase.behaviors) target.behaviors = [...phase.behaviors];
+      report.phases.push({ unit: target.id, index: target.phase, time, label: phase.label, elements: [...target.elements] });
+      if (target.side === 'enemy' && !report.mechanics[target.definitionId].phases.includes(target.phase)) report.mechanics[target.definitionId].phases.push(target.phase);
+      emit('phase', { target: target.id, name: phase.label, depth: target.phase, element: target.elements[0] });
+      if (phase.effects) {
+        const applications: ElementApplication[] = [];
+        applyEffects(phase.effects, target, source, target.elements[0], { depth: 0, triggered: new Set() }, applications);
+        for (const application of applications) applyElement(application.source, application.target, application.element);
+      }
     }
   }
 
-  function heal(source: CombatUnit, target: CombatUnit | undefined, amount: number) {
+  function heal(source: CombatUnit, target: CombatUnit | undefined, amount: number, reaction: boolean | string = false) {
     if (!target || target.hp <= 0) return;
     const restored = Math.min(target.maxHp - target.hp, Math.round(amount * (relic(source).healingMultiplier ?? 1) * (source.side === 'ally' ? specialization(source.elements[0]).healing ?? 1 : 1)));
-    target.hp += restored;
+    target.hp += restored; report.units[source.id].healing += restored;
+    if (source.side === 'ally' && typeof reaction === 'string') reactionSupport(reaction).healing += restored;
     if (source.side === 'ally') report.healing += restored;
     if (restored) emit('heal', { source: source.id, target: target.id, amount: restored });
   }
@@ -176,15 +200,24 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       switch (effect.type) {
         case 'damage': dealDamage(source, chosen, source.attack * effect.scale, element, isReaction); break;
         case 'status': applyStatus(chosen, effect.status, effect.duration, effect.intensity, source, effect.stacks, isReaction); break;
-        case 'heal': heal(source, chosen, source.attack * effect.scale); break;
+        case 'heal': heal(source, chosen, source.attack * effect.scale, isReaction); break;
         case 'shield':
           if (chosen && chosen.hp > 0) {
-            chosen.shield = Math.min(chosen.maxHp * 0.5, chosen.shield + Math.round(source.attack * effect.scale * (source.side === 'ally' ? specialization(source.elements[0]).shield ?? 1 : 1)));
-            emit('shield', { source: source.id, target: chosen.id, amount: chosen.shield });
+            const before = chosen.shield;
+            chosen.shield = Math.max(before, Math.min(chosen.maxHp * 0.5, chosen.shield + Math.round(source.attack * effect.scale * (source.side === 'ally' ? specialization(source.elements[0]).shield ?? 1 : 1))));
+            const granted = chosen.shield - before; report.units[source.id].shield += granted;
+            if (source.side === 'ally' && typeof isReaction === 'string') reactionSupport(isReaction).shield += granted;
+            if (granted) emit('shield', { source: source.id, target: chosen.id, amount: granted, reaction: isReaction });
           }
           break;
         case 'cleanse':
-          if (chosen) for (const s of Object.values(chosen.statuses).filter(s => STATUSES[s.id].harmful).slice(0, effect.count)) delete chosen.statuses[s.id];
+          if (chosen) {
+            const removed = Object.values(chosen.statuses).filter(s => STATUSES[s.id].harmful).slice(0, effect.count);
+            for (const s of removed) delete chosen.statuses[s.id];
+            report.units[source.id].cleanses += removed.length;
+            if (source.side === 'ally' && typeof isReaction === 'string') reactionSupport(isReaction).cleanses += removed.length;
+            if (removed.length) emit('cleanse', { source: source.id, target: chosen.id, amount: removed.length, reaction: isReaction });
+          }
           break;
         case 'explode':
           for (const other of opposing(source).slice(0, effect.count ?? 5)) dealDamage(source, other, source.attack * effect.scale, element, isReaction);
@@ -228,16 +261,15 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
   }
 
   function reactionOptions(source: CombatUnit, target: CombatUnit, element: string) {
-    const context = { environment: encounter.environment, statuses: Object.keys(target.statuses), healthRatio: target.hp / target.maxHp, enemyCount: opposing(source).length, shielded: target.shield > 0, tags: target.elements.flatMap(id => ELEMENT_BY_ID[id].tags), mastery: source.side === 'ally' && !config.normalized ? masteryLevels : {} };
+    const context = { research: source.side === 'ally' && !config.normalized ? config.research : [], environment: encounter.environment, statuses: Object.keys(target.statuses), healthRatio: target.hp / target.maxHp, enemyCount: opposing(source).length, shielded: target.shield > 0, tags: target.elements.flatMap(id => ELEMENT_BY_ID[id].tags), mastery: source.side === 'ally' && !config.normalized ? masteryLevels : {} };
     const present = new Set(Object.keys(target.residues));
     // Status/element associations are content-level affinities, not individual recipe cases.
     for (const id of Object.keys(target.statuses)) {
       const affinity = STATUS_AFFINITIES[id];
       if (affinity) present.add(affinity);
     }
-    const rules = [...present].map(other => engine.resolve(element, other, context)).filter((rule): rule is ReactionDefinition => rule !== null);
-    const rank = (r: ReactionDefinition) => source.reactionPriority.includes(r.id) ? 100 - source.reactionPriority.indexOf(r.id) : r.priority;
-    return rules.filter(r => !r.tags.some(tag => source.modifiers.disabledReactionTags?.includes(tag))).sort((a, b) => rank(b) - rank(a) || a.id.localeCompare(b.id));
+    const rules = [...present].flatMap(other => engine.matching(element, other, context));
+    return rules.filter(r => !r.tags.some(tag => source.modifiers.disabledReactionTags?.includes(tag))).sort((a, b) => compareReactionPriority(a, b, source.reactionPriority));
   }
 
   function applyElement(source: CombatUnit, target: CombatUnit | undefined, element: string) {
@@ -258,6 +290,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       victim.residues[rule.output] = time + BALANCE.residueDuration;
       const depth = context.depth + 1;
       report.highestChain = Math.max(report.highestChain, depth);
+      report.units[actor.id].reactions++;
       if (actor.side === 'ally') report.reactions[rule.id] = (report.reactions[rule.id] ?? 0) + 1;
       emit('reaction', { source: actor.id, target: victim.id, id: rule.id, name: rule.name, element: rule.output, depth });
       if (depth > 1) emit('reactionChain', { source: actor.id, target: victim.id, depth, element: rule.output });
@@ -278,6 +311,34 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       const ownerId = ['damage', 'expired', 'death', 'lowHealth'].includes(event.type ?? '') ? event.target : event.source;
       for (const unit of ownerId ? units.filter(u => u.id === ownerId) : units) {
         if (unit.hp <= 0 && event.trigger !== 'OnDeath') continue;
+        const spec = unit.side === 'ally' && event.trigger === 'OnKill' && event.element ? specialization(event.element) : emptySpecialization;
+        if (spec.onKillEffects) {
+          const specKey = unit.id + ':specialization:' + spec.id + ':kill';
+          if (!triggered.has(specKey) && (unit.cooldowns[specKey] ?? -1) <= time) {
+            triggered.add(specKey); unit.cooldowns[specKey] = time + (spec.cooldown ?? 0);
+            const applications: ElementApplication[] = [];
+            applyEffects(spec.onKillEffects, unit, opposing(unit)[0], event.element!, { depth: 1, triggered: new Set() }, applications);
+            emit('specialization', { source: unit.id, name: spec.name, element: event.element, trigger: event.trigger });
+            for (const application of applications) applyElement(application.source, application.target, application.element);
+          }
+        }
+        for (const behavior of unit.behaviors) {
+          if (behavior.trigger !== event.trigger) continue;
+          const key = unit.id + ':behavior:' + behavior.id;
+          if (triggered.has(key) || (unit.cooldowns[key] ?? -1) > time) continue;
+          const counter = behavior.suppressedBy?.find(id => unit.statuses[id]) ?? Object.keys(unit.statuses).find(id => STATUSES[id].suppressEffects);
+          if (counter) {
+            if (unit.side === 'enemy') { const counts = report.mechanics[unit.definitionId].counters; counts[counter] = (counts[counter] ?? 0) + 1; }
+            emit('counter', { source: unit.id, name: behavior.name, status: counter }); continue;
+          }
+          triggered.add(key); unit.cooldowns[key] = time + behavior.cooldown;
+          const target = units.find(u => u.id === event.target && u.side !== unit.side && u.hp > 0) ?? opposing(unit)[0];
+          const applications: ElementApplication[] = [];
+          applyEffects(behavior.effects, unit, target, unit.elements[0], { depth: 1, triggered: new Set() }, applications);
+          if (unit.side === 'enemy' && !report.mechanics[unit.definitionId].behaviors.includes(behavior.id)) report.mechanics[unit.definitionId].behaviors.push(behavior.id);
+          emit('behavior', { source: unit.id, name: behavior.name, id: behavior.id, trigger: event.trigger });
+          for (const application of applications) applyElement(application.source, application.target, application.element);
+        }
         const learned = PASSIVES.find(p => p.id === unit.passive && p.trigger === event.trigger);
         const masteryPassive = unit.side === 'ally' && !config.normalized && (config.mastery?.[unit.elements[0]] ?? 0) >= MASTERY_REWARDS.passiveLevel * BALANCE.masteryThreshold && MASTERY_REWARDS.passive.trigger === event.trigger ? MASTERY_REWARDS.passive : null;
         for (const passive of [learned, masteryPassive].filter(Boolean)) {
@@ -308,8 +369,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       for (const candidate of source.targeting === 'reaction' && !taunting ? enemies : [target]) {
         for (const id of source.elements) {
           const rule = reactionOptions(source, candidate, id).find(r => (candidate.cooldowns[r.id] ?? -1) <= time);
-          const rank = (r: ReactionDefinition) => source.reactionPriority.includes(r.id) ? 100 - source.reactionPriority.indexOf(r.id) : r.priority;
-          if (rule && (!best || rank(rule) > rank(best.rule))) best = { target: candidate, element: id, rule };
+          if (rule && (!best || compareReactionPriority(rule, best.rule, source.reactionPriority) < 0)) best = { target: candidate, element: id, rule };
         }
       }
       if (best) ({ target, element } = best);
@@ -320,7 +380,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
   const snapshot = (): BattleFrame => ({
     time, eventCount: events.length,
     object: environment.object ? { name: environment.object, charges: objectCharges, description: environment.description } : null,
-    units: units.map(u => ({ id: u.id, definitionId: u.definitionId, side: u.side, position: u.position, name: u.name, shape: u.shape, hp: u.hp, maxHp: u.maxHp, shield: u.shield, elements: [...u.elements], statuses: Object.values(u.statuses).map(s => ({ id: s.id, stacks: s.stacks, remaining: Math.max(0, s.expires - time) })), phase: u.phase, residues: { ...u.residues }, cooldowns: { ...u.cooldowns }, ready: u.ready })),
+    units: units.map(u => ({ id: u.id, definitionId: u.definitionId, side: u.side, position: u.position, name: u.name, shape: u.shape, hp: u.hp, maxHp: u.maxHp, shield: u.shield, elements: [...u.elements], statuses: Object.values(u.statuses).map(s => ({ id: s.id, stacks: s.stacks, remaining: Math.max(0, s.expires - time) })), phase: u.phase, ...(u.phase ? { phaseLabel: u.definition.phases![u.phase - 1].label } : {}), immunities: [...u.immunities], behaviors: u.behaviors.map(b => b.id), residues: { ...u.residues }, cooldowns: { ...u.cooldowns }, ready: u.ready })),
   });
   let objectCharges = environment.interaction?.charges ?? 0;
   if (environment.startStatus) for (const unit of units) applyStatus(unit, environment.startStatus, 6, 1, unit);
@@ -340,7 +400,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
           const source = units.find(u => u.id === s.source);
           if (!source) continue;
           if (STATUSES[s.id].periodic === 'damage') dealDamage(source, unit, s.power * s.intensity * s.stacks, STATUS_AFFINITIES[s.id] ?? source.elements[0], s.reaction);
-          else heal(source, unit, s.power * s.intensity * s.stacks);
+          else heal(source, unit, s.power * s.intensity * s.stacks, s.reaction);
         }
       }
       if (unit.hp <= 0 || Object.values(unit.statuses).some(s => STATUSES[s.id].disables)) continue;
@@ -351,6 +411,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       const { target, element } = action;
       const ability = Object.values(unit.statuses).some(s => STATUSES[s.id].suppressEffects) ? undefined : unit.abilities.map(id => ABILITIES.find(a => a.id === id)!).find(a => (unit.cooldowns['ability:' + a.id] ?? 0) <= time && (a.condition !== 'wounded' || alive(unit.side).some(u => u.hp / u.maxHp < .7)) && (a.condition !== 'unshielded' || unit.shield === 0));
       if (ability) {
+        report.units[unit.id].abilityCasts++;
         unit.cooldowns['ability:' + ability.id] = time + ability.cooldown; unit.ready += unit.interval; report.decisions++;
         emit('cast', { source: unit.id, target: target.id, element, name: ability.name });
         const applications: ElementApplication[] = [];
@@ -358,6 +419,8 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
         for (const item of applications) applyElement(item.source, item.target, item.element);
         processTriggers(); continue;
       }
+      if (unit.side === 'ally') report.elementCasts[element] = (report.elementCasts[element] ?? 0) + 1;
+      report.units[unit.id].elementCasts++;
       unit.casts++;
       unit.ready += unit.interval;
       report.decisions++;
@@ -379,6 +442,15 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       if (critical) emit('critical', { source: unit.id, target: target.id, element });
       const queue: ElementApplication[] = [];
       if (!Object.values(unit.statuses).some(s => STATUSES[s.id].suppressEffects)) applyEffects(ELEMENT_BY_ID[element].effects, unit, target, element, { depth: 0, triggered: new Set() }, queue);
+      const spec = unit.side === 'ally' ? specialization(element) : emptySpecialization;
+      if (spec.castEffects) {
+        const specKey = 'specialization:' + spec.id + ':cast';
+        if ((unit.cooldowns[specKey] ?? -1) <= time && !Object.values(unit.statuses).some(s => STATUSES[s.id].suppressEffects)) {
+          unit.cooldowns[specKey] = time + (spec.cooldown ?? 0);
+          applyEffects(spec.castEffects, unit, target, element, { depth: 0, triggered: new Set() }, queue);
+          emit('specialization', { source: unit.id, name: spec.name, element });
+        }
+      }
       // Derived elements use the same effect vocabulary, including their outgoing chain applications.
       applyElement(unit, target, element);
       for (const event of queue) applyElement(event.source, event.target, event.element);

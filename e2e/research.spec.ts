@@ -1,0 +1,120 @@
+import { test, expect } from '@playwright/test';
+
+test('research prerequisites unlock alternate recipes and preserve purchases across reload', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/#research');
+  await page.evaluate(async () => {
+    const { createPlayer, experiment } = await import('/src/core/progression.js');
+    const p = createPlayer(); p.knowledge = 200; p.talents = ['careful-notes', 'patient-scholar']; experiment(p, 'fire', 'water');
+    localStorage.setItem('alchemy-wars.save.v1', JSON.stringify(p));
+  });
+  await page.reload();
+  await expect(page.locator('.research-branch')).toHaveCount(7);
+  await expect(page.locator('.research-card')).toHaveCount(19);
+  const pressure = page.locator('[data-research="reaction-science"]');
+  await expect(pressure.getByRole('button')).toBeDisabled();
+  await expect(pressure).toContainText('Chain Resonance');
+  await page.locator('[data-research="resonance"] button').click();
+  await expect(pressure.getByRole('button')).toBeEnabled();
+  await expect(pressure.getByRole('button')).toHaveText('Research · 20 knowledge');
+  await page.getByRole('button', { name: 'Reaction Science', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Reaction Science', exact: true })).toBeFocused();
+  await pressure.getByRole('button').click();
+  await expect(pressure).toContainText('Understood');
+  await pressure.screenshot({ path: 'test-results/research-unlock-' + info.project.name + '.png' });
+  await page.reload(); await expect(pressure.getByRole('button')).toBeDisabled();
+  await page.goto('/#lab');
+  await page.getByRole('button', { name: 'Select Steam', exact: true }).click();
+  await page.getByRole('button', { name: 'Select Wind', exact: true }).click();
+  await page.getByRole('button', { name: 'Combine elements' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Pressure Current');
+  await page.getByRole('button', { name: /Close dialog/ }).click();
+  await page.locator('#known-recipe').selectOption('pressure-current');
+  await page.getByRole('button', { name: 'Prepare known recipe', exact: true }).click();
+  await expect(page.locator('#hint-area')).toContainText('Pressure Dynamics');
+  await page.getByRole('button', { name: 'Combine elements' }).click();
+  await expect(page.locator('.result-strip')).toContainText('Pressure Current');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test('research unlocks a third ability slot and a craftable catalyst with durable equipment', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/#workshop');
+  await page.evaluate(async () => {
+    const { createPlayer, experiment } = await import('/src/core/progression.js');
+    const p = createPlayer(); p.knowledge = 200; p.gold = 500; p.essence = 100; p.shards = 10;
+    for (const b of ['water', 'earth', 'wind', 'nature']) experiment(p, 'fire', b);
+    localStorage.setItem('alchemy-wars.save.v1', JSON.stringify(p));
+  });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Craft Echo Catalyst', exact: true })).toBeDisabled();
+  await page.goto('/#team');
+  await expect(page.locator('select[data-x-select="ability"][data-index="0"]')).toHaveCount(2);
+  await page.goto('/#research');
+  await expect(page.locator('[data-research="tactical-memory"] button')).toBeDisabled();
+  for (const id of ['warding', 'tactical-memory', 'cultivation', 'vessel-forms', 'resonance', 'catalyst-study']) await page.locator('[data-research="' + id + '"] button').click();
+  await page.goto('/#workshop');
+  await page.getByRole('button', { name: 'Craft Echo Catalyst', exact: true }).click();
+  await expect(page.locator('[data-action="x-craft"][data-id="echo-catalyst"]')).toHaveText('Crafted');
+  await page.goto('/#team');
+  const abilities = page.locator('select[data-x-select="ability"][data-index="0"]');
+  await expect(abilities).toHaveCount(3);
+  await abilities.nth(0).selectOption('ward'); await abilities.nth(1).selectOption('mend'); await abilities.nth(2).selectOption('renewal');
+  await page.locator('select[data-x-select="equip"][data-index="0"]').selectOption('echo-catalyst');
+  await page.reload();
+  await expect(abilities.nth(2)).toHaveValue('renewal');
+  await expect(page.locator('.advanced-formation article').first()).toContainText('Equipped: Echo Catalyst');
+  await page.locator('.advanced-formation article').first().screenshot({ path: 'test-results/research-formation-' + info.project.name + '.png' });
+  await page.goto('/#home'); await page.getByRole('button', { name: 'Quick battle', exact: true }).click();
+  await expect(page.locator('.report')).toBeVisible();
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('alchemy-wars.save.v1')!));
+  expect(saved.lastReplay.team[0].abilities).toEqual(['ward', 'mend', 'renewal']);
+  expect(saved.team[0].equipment.catalyst).toBe('echo-catalyst');
+  expect(errors).toEqual([]);
+});
+
+test('observatory claims ready rewards and daily goals, then quick battle settles exactly once', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/#home');
+  await page.evaluate(async () => {
+    const { createPlayer, experiment } = await import('/src/core/progression.js');
+    const { dailyGoals } = await import('/src/core/learning.js');
+    const { REACTIONS } = await import('/src/data/content.js');
+    const p = createPlayer(), day = dailyGoals();
+    const rules = REACTIONS.filter(r => !r.conditions && r.inputs.includes(day.practice) && r.inputs.every(id => p.owned.includes(id))).slice(0, 2);
+    for (const r of rules) experiment(p, r.inputs[0], r.inputs[1]);
+    localStorage.setItem('alchemy-wars.save.v1', JSON.stringify(p));
+  });
+  await page.reload();
+  await expect(page.locator('.home-objectives')).toContainText('2 rewards ready to claim');
+  await page.getByRole('button', { name: 'Claim 2 completed rewards', exact: true }).click();
+  await expect(page.locator('.home-objectives')).toContainText('0 rewards ready to claim');
+  await page.getByRole('button', { name: 'Claim daily reward', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Claim daily reward', exact: true })).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/home-objectives-' + info.project.name + '.png', fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Quick battle', exact: true }).click();
+  await expect(page.locator('.report')).toBeVisible();
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('alchemy-wars.save.v1')!));
+  expect(saved.battles).toBe(1); expect(saved.claimedBattles).toHaveLength(1);
+  await page.reload();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('alchemy-wars.save.v1')!).battles)).toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test('preparing a frozen-target recipe restores its condition and persistent instructions', async ({ page }) => {
+  await page.goto('/#lab');
+  await page.getByRole('checkbox', { name: 'Frozen target', exact: true }).check();
+  await page.getByRole('button', { name: 'Combine elements' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Thermal Shock');
+  await page.getByRole('button', { name: /Close dialog/ }).click();
+  await page.reload();
+  await expect(page.getByRole('checkbox', { name: 'Frozen target', exact: true })).not.toBeChecked();
+  await page.locator('#known-recipe').selectOption('thermal-shock');
+  await page.getByRole('button', { name: 'Prepare known recipe', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Frozen target', exact: true })).toBeChecked();
+  await expect(page.locator('#hint-area')).toContainText('Frozen');
+  await page.getByRole('button', { name: 'Combine elements' }).click();
+  await expect(page.locator('.result-strip')).toContainText('Thermal Shock');
+});
