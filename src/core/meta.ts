@@ -1,10 +1,12 @@
 import { craftCost } from './talents.js';
+import { evolutionState } from './evolution.js';
+export { evolutionCost } from './evolution.js';
 import { hasResearch } from './research.js';
 export { saveLoadout, applyLoadout, renameLoadout, replaceLoadout, deleteLoadout } from './formations.js';
 import type { Player, MetaProgress, NumericModifier, Research, Quest } from '../types.js';
 import { learningDefaults, discoveryGoalProgress } from './learning.js';
-import { VESSELS, ELEMENT_BY_ID } from '../data/content.js';
-import { TALENTS, EQUIPMENT, SPECIALIZATIONS, QUESTS, ACHIEVEMENTS, PASSIVES, COSMETICS } from '../data/systems.js';
+import { VESSELS } from '../data/content.js';
+import { TALENTS, EQUIPMENT, QUESTS, ACHIEVEMENTS, PASSIVES, COSMETICS } from '../data/systems.js';
 
 export function metaDefaults(): MetaProgress {
   return { creatureKnowledge: {}, learning: learningDefaults(), vesselXp: {}, chains: [], creatures: [], activeDays: [new Date().toISOString().slice(0, 10)], createdAt: Date.now(), essence: 0, shards: 0, talents: [], equipment: [], evolution: {}, specializations: {}, quests: [], achievements: [], achievementClaims: [], reactionWins: {}, discoveryDates: {}, runsWon: 0, endlessBest: 0, run: null, loadouts: [], experimentNotes: [], cosmetics: ['observatory'], theme: 'observatory', analytics: [{ name: 'tutorial_started', at: Date.now() }], dailyClaims: [], highestChain: 0 };
@@ -30,18 +32,14 @@ export function equipItem(player: Player, index: number, id: string) {
   if (!unit || !item || !player.equipment.includes(id)) return false;
   unit.equipment = { ...unit.equipment, [item.slot]: id }; return true;
 }
-export function evolutionCost(player: Player, id: string) {
-  const level = player.evolution[id] ?? 0;
-  return { gold: 60 * (level + 1), essence: 15 * (level + 1), mastery: 15 * (level + 1) };
-}
 export function evolveElement(player: Player, id: string) {
-  if (!player.owned.includes(id) || (player.evolution[id] ?? 0) >= 3) return false;
-  const cost = evolutionCost(player, id);
-  if (player.gold < cost.gold || player.essence < cost.essence || (player.mastery[id] ?? 0) < cost.mastery) return false;
-  player.gold -= cost.gold; player.essence -= cost.essence; player.evolution[id] = (player.evolution[id] ?? 0) + 1; return true;
+  const state = evolutionState(player, id);
+  if (!state?.ready) return false;
+  player.gold -= state.cost.gold; player.essence -= state.cost.essence; player.evolution[id] = state.level + 1; return true;
 }
 export function specializeElement(player: Player, id: string, specialization: string) {
-  if (!player.owned.includes(id) || !player.evolution[id] || !SPECIALIZATIONS.some(s => s.id === specialization && (!s.tags || s.tags.some(tag => ELEMENT_BY_ID[id].tags.includes(tag))))) return false;
+  const state = evolutionState(player, id);
+  if (!state?.level || !state.specializations.some(s => s.id === specialization)) return false;
   player.specializations[id] = specialization; return true;
 }
 export function availableVessels(player: Player) { return VESSELS.filter(v => !v.unlockWins || player.wins >= v.unlockWins); }

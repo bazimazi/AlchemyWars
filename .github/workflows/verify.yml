@@ -18,4 +18,5 @@ jobs:
       - run: npm run build
       - run: npm run test:e2e
       - run: npm run balance -- 10
+      - run: npm run balance -- 10 --evolved
       - run: npm run balance:runs -- 5

@@ -19,6 +19,40 @@ import { claimBattle } from '../src/core/progression.js';
 import { TALENTS } from '../src/data/systems.js';
 import { STORM_CYCLE } from '../src/data/storm-catalysis.js';
 
+test('server evolution purchases spend each earned rank atomically and keep launched signatures immutable across restart', async t => {
+  const { service, directory } = await fixture(t), account = await service.register('EvolutionScholar', 'test-only-password-123');
+  await service.store.transaction(db => {
+    const p = db.users[0].player; p.gold = 360; p.essence = 90; p.mastery.fire = 45;
+    p.team.forEach(slot => { slot.elements = ['fire', 'fire']; slot.priority = 'core'; slot.abilities = []; });
+  });
+  const first = await service.startBattle(account.token, { encounterId: ENCOUNTERS[0].id });
+  const purchases = await Promise.all(Array.from({ length: 4 }, () => service.command(account.token, 'evolve', { id: 'fire' })));
+  assert.equal(purchases.filter(response => response.result).length, 3);
+  const upgraded = service.me(account.token).player!; assert.deepEqual([upgraded.gold, upgraded.essence, upgraded.mastery.fire, upgraded.evolution.fire], [0, 0, 45, 3]);
+  assert.deepEqual(simulateBattle(first.config).report.evolution, {});
+  await service.finishBattle(account.token, first.battleId);
+  const reopened = await createService(directory), launched = await reopened.startBattle(account.token, { encounterId: ENCOUNTERS[0].id });
+  const battle = simulateBattle(launched.config); assert.ok(Object.keys(battle.report.evolution).length);
+  await Promise.all([reopened.finishBattle(account.token, launched.battleId), reopened.finishBattle(account.token, launched.battleId)]);
+  const player = (await createService(directory)).me(account.token).player!;
+  assert.equal(player.evolution.fire, 3); assert.equal(player.battles, 2); assert.deepEqual(simulateBattle(player.lastReplay!).report.evolution, battle.report.evolution);
+});
+
+test('online evolution and specialization enforce ownership, mastery, resources and elemental compatibility', async t => {
+  const { service } = await fixture(t), account = await service.register('EvolutionNovice', 'test-only-password-123');
+  assert.equal((await service.command(account.token, 'evolve', { id: 'arcane' })).result, false);
+  assert.equal((await service.command(account.token, 'specialize', { id: 'water', specialization: 'phoenix' })).result, false);
+  await service.store.transaction(db => { const p = db.users[0].player; p.gold = 180; p.essence = 45; p.mastery.water = 29; });
+  assert.equal((await service.command(account.token, 'evolve', { id: 'water' })).result, true);
+  const before = service.me(account.token).player!;
+  assert.equal((await service.command(account.token, 'evolve', { id: 'water' })).result, false); assert.deepEqual(service.me(account.token).player, before);
+  assert.equal((await service.command(account.token, 'specialize', { id: 'water', specialization: 'phoenix' })).result, false);
+  assert.equal((await service.command(account.token, 'specialize', { id: 'water', specialization: 'enduring' })).result, true);
+  await service.store.transaction(db => { db.users[0].player.mastery.water = 30; });
+  assert.equal((await service.command(account.token, 'evolve', { id: 'water' })).result, true);
+  assert.deepEqual([service.me(account.token).player!.gold, service.me(account.token).player!.essence], [0, 0]);
+});
+
 test('server records an issued ten-reaction chain once and persists its independent achievement claim', async t => {
   const { service, directory } = await fixture(t), account = await service.register('ChainScholar', 'test-only-password-123');
   await service.store.transaction(db => {

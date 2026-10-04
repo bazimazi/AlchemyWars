@@ -1,4 +1,6 @@
 import { ObjectPool } from './pool.js';
+import { evolutionLevel } from './evolution.js';
+import { evolutionTrait } from '../data/evolution.js';
 import { abilitySlots } from './research.js';
 import { ABILITIES, VESSEL_PROFILES, vesselLevel, validAbilities } from '../data/units.js';
 import type { Player, BattleConfig, CombatUnit, BattleEvent, BattleFrame, BattleReport, BattleResult, Effect, UnitDefinition, Loadout, Side, StatusModifier, Specialization, ChainContext, ElementApplication, ReactionDefinition, Passive } from '../types.js';
@@ -54,7 +56,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
   const talentPassives: Record<string, Passive[]> = {};
   if (!config.normalized) for (const talent of TALENTS) if (config.talents?.includes(talent.id) && talent.passive?.trigger) (talentPassives[talent.passive.trigger] ??= []).push(talent.passive);
   const masteryLevels = config.normalized ? {} : Object.fromEntries(Object.entries(config.mastery ?? {}).map(([id, xp]) => [id, Math.min(10, Math.floor(xp / BALANCE.masteryThreshold))]));
-  const evolution = (id: string) => config.normalized ? 0 : config.evolution?.[id] ?? 0;
+  const evolution = (id: string) => config.normalized ? 0 : evolutionLevel(config.evolution?.[id]);
   const emptySpecialization: Partial<Specialization> = {};
   const specializations = Object.fromEntries(Object.entries(config.normalized ? {} : config.specializations ?? {}).flatMap(([id, selected]) => {
     const definition = evolution(id) && SPECIALIZATIONS.find(s => s.id === selected && (!s.tags || s.tags.some(tag => ELEMENT_BY_ID[id]?.tags.includes(tag))));
@@ -68,7 +70,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
   const triggerPool = new ObjectPool<Partial<BattleEvent>>(() => ({}), value => { for (const key of Object.keys(value) as (keyof BattleEvent)[]) delete value[key]; });
   const triggerQueue: Partial<BattleEvent>[] = [];
   const triggerNames: Record<string, string> = { start: 'OnBattleStart', end: 'OnBattleEnd', cast: 'OnAbilityCast', critical: 'OnCritical', hit: 'OnHit', status: 'OnStatusApplied', expired: 'OnStatusExpired', damage: 'OnDamageTaken', death: 'OnDeath', kill: 'OnKill', element: 'OnElementApplied', reaction: 'OnReaction', reactionChain: 'OnReactionChain', lowHealth: 'OnLowHealth' };
-  const report: BattleReport = { units: {}, reactionSupport: {}, mechanics: {}, phases: [], statusDamage: {}, chains: [], elementCasts: {}, damageByElement: {}, damageByUnit: {}, damageByReaction: {}, reactions: {}, reactionDamage: 0, totalDamage: 0, healing: 0, highestChain: 0, highestAllyChain: 0, longestAllyChain: null, decisions: 0, guardedEvents: 0 };
+  const report: BattleReport = { evolution: {}, units: {}, reactionSupport: {}, mechanics: {}, phases: [], statusDamage: {}, chains: [], elementCasts: {}, damageByElement: {}, damageByUnit: {}, damageByReaction: {}, reactions: {}, reactionDamage: 0, totalDamage: 0, healing: 0, highestChain: 0, highestAllyChain: 0, longestAllyChain: null, decisions: 0, guardedEvents: 0 };
   const emit = (type: string, fields: Partial<BattleEvent> = {}) => {
     if (events.length < BALANCE.maxLogEvents) events.push({ time, type, ...fields });
     if (triggerNames[type]) triggerQueue.push(Object.assign(triggerPool.acquire(), { trigger: triggerNames[type], type }, fields));
@@ -81,6 +83,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       maxHp: Math.round(definition.hp * scale * BALANCE.healthMultiplier), attack: definition.attack * scale,
       armor: definition.armor, interval: definition.interval,
       elements: [...(slot.elements ?? definition.elements)], relic: slot.relic ?? 'none',
+      evolutionTraits: side === 'ally' ? [...new Set(slot.elements ?? definition.elements)].filter(id => evolution(id) === 3).map(element => ({ element, trait: evolutionTrait(ELEMENT_BY_ID[element]) })) : [],
       targeting: slot.targeting ?? 'front', priority: slot.priority ?? 'reaction',
       immunities: [...(definition.immunities ?? [])], behaviors: [...(definition.behaviors ?? [])],
       abilities: (slot.abilities ?? []).slice(0, abilitySlots(config.research, config.normalized)), passive: slot.passive ?? 'none', equipment: slot.equipment ?? {}, reactionPriority: slot.reactionPriority ?? [],
@@ -321,6 +324,20 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       const ownerId = ['damage', 'expired', 'death', 'lowHealth'].includes(event.type ?? '') ? event.target : event.source;
       for (const unit of ownerId ? units.filter(u => u.id === ownerId) : units) {
         if (unit.hp <= 0 && event.trigger !== 'OnDeath') continue;
+        if (unit.evolutionTraits.length && !Object.values(unit.statuses).some(s => STATUSES[s.id].suppressEffects)) for (const { element, trait } of unit.evolutionTraits) {
+          if (!unit.elements.includes(element)) continue;
+          const rule = event.type === 'reaction' && event.id ? engine.byId.get(event.id) : undefined;
+          const matches = trait.trigger === 'OnElementCast' ? event.type === 'cast' && !event.name && event.element === element : rule && (rule.inputs.includes(element) || rule.output === element);
+          const key = 'evolution:' + element + ':' + trait.id;
+          if (!matches || triggered.has(unit.id + ':' + key) || (unit.cooldowns[key] ?? -1) > time) continue;
+          triggered.add(unit.id + ':' + key); unit.cooldowns[key] = time + trait.cooldown;
+          const target = units.find(u => u.id === event.target && u.side !== unit.side && u.hp > 0) ?? opposing(unit)[0];
+          const activation = (report.evolution[unit.id] ??= {})[element] ??= { trait: trait.id, activations: 0 }; activation.activations++;
+          const applications: ElementApplication[] = [];
+          applyEffects(trait.effects, unit, target, element, { depth: 1, triggered: new Set() }, applications);
+          emit('evolution', { source: unit.id, target: target?.id, element, id: trait.id, name: trait.name, trigger: trait.trigger });
+          for (const application of applications) applyElement(application.source, application.target, application.element);
+        }
         const spec = unit.side === 'ally' && event.trigger === 'OnKill' && event.element ? specialization(event.element) : emptySpecialization;
         if (spec.onKillEffects) {
           const specKey = unit.id + ':specialization:' + spec.id + ':kill';
@@ -390,7 +407,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
   const snapshot = (): BattleFrame => ({
     time, eventCount: events.length,
     object: environment.object ? { name: environment.object, charges: objectCharges, description: environment.description } : null,
-    units: units.map(u => ({ id: u.id, definitionId: u.definitionId, side: u.side, position: u.position, name: u.name, shape: u.shape, hp: u.hp, maxHp: u.maxHp, shield: u.shield, elements: [...u.elements], statuses: Object.values(u.statuses).map(s => ({ id: s.id, stacks: s.stacks, remaining: Math.max(0, s.expires - time) })), phase: u.phase, ...(u.phase ? { phaseLabel: u.definition.phases![u.phase - 1].label } : {}), immunities: [...u.immunities], behaviors: u.behaviors.map(b => b.id), residues: { ...u.residues }, cooldowns: { ...u.cooldowns }, ready: u.ready })),
+    units: units.map(u => ({ id: u.id, definitionId: u.definitionId, side: u.side, position: u.position, name: u.name, shape: u.shape, hp: u.hp, maxHp: u.maxHp, shield: u.shield, elements: [...u.elements], evolutionTraits: u.evolutionTraits.filter(t => u.elements.includes(t.element)).map(t => ({ element: t.element, trait: t.trait.id })), statuses: Object.values(u.statuses).map(s => ({ id: s.id, stacks: s.stacks, remaining: Math.max(0, s.expires - time) })), phase: u.phase, ...(u.phase ? { phaseLabel: u.definition.phases![u.phase - 1].label } : {}), immunities: [...u.immunities], behaviors: u.behaviors.map(b => b.id), residues: { ...u.residues }, cooldowns: { ...u.cooldowns }, ready: u.ready })),
   });
   let objectCharges = environment.interaction?.charges ?? 0;
   if (environment.startStatus) for (const unit of units) applyStatus(unit, environment.startStatus, 6, 1, unit);

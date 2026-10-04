@@ -1,3 +1,4 @@
+import { evolutionTrait } from '../data/evolution.js';
 import type { Player, ReactionContext, BattleResult } from '../types.js';
 import { dailyGoals, dailyGoalProgress, TUTORIAL_STEPS, conditionText } from '../core/learning.js';
 import { reactionEngine } from '../core/reactions.js';
@@ -27,8 +28,9 @@ export function renderDailyGoals(player: Player) {
   }).join('')}</div></section>`;
 }
 export function renderElementLearning(player: Player, id: string) {
+  const trait = evolutionTrait(ELEMENT_BY_ID[id]);
   const spec = SPECIALIZATIONS.find(s => s.id === player.specializations[id]);
-  return `<section class="element-learning"><h3>Your experience with ${esc(ELEMENT_BY_ID[id].name)}</h3><p>${player.learning.elementCasts[id] ?? 0} elemental casts · ${player.learning.elementWins[id] ?? 0} victories with an actual cast</p><p>Observed in ${player.chains.filter(c => c.reactions.some(r => REACTION_BY_ID[r].inputs.includes(id) || REACTION_BY_ID[r].output === id)).length} recorded reaction chains</p><p>Evolution ${player.evolution[id] ?? 0} / 3 · ${spec ? esc(spec.name) + ': ' + esc(spec.description) : 'No specialization selected'}</p><p class="subtle">Saved formations: ${esc(player.loadouts.filter(l => l.team.some(s => s.elements.includes(id))).map(l => l.name).join(', ') || 'none yet')}</p></section>`;
+  return `<section class="element-learning"><h3>Your experience with ${esc(ELEMENT_BY_ID[id].name)}</h3><p>${player.learning.elementCasts[id] ?? 0} elemental casts · ${player.learning.elementWins[id] ?? 0} victories with an actual cast</p><p>Observed in ${player.chains.filter(c => c.reactions.some(r => REACTION_BY_ID[r].inputs.includes(id) || REACTION_BY_ID[r].output === id)).length} recorded reaction chains</p><p>Evolution ${player.evolution[id] ?? 0} / 3 · ${spec ? esc(spec.name) + ': ' + esc(spec.description) : 'No specialization selected'}</p><p>Evolution III signature: ${esc(trait.name)}${(player.evolution[id] ?? 0) === 3 ? " (unlocked)" : " (locked)"}. ${esc(trait.description)}</p><p class="subtle">Saved formations: ${esc(player.loadouts.filter(l => l.team.some(s => s.elements.includes(id))).map(l => l.name).join(', ') || 'none yet')}</p></section>`;
 }
 export function renderLabConditions(player: Player, context: ReactionContext) {
   return renderTargetConditions(player.owned, context, 'lab');

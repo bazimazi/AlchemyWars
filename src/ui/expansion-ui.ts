@@ -1,3 +1,4 @@
+import { renderEvolutionWorkshop } from './evolution-ui.js';
 import { renderTalentTree } from './talent-ui.js';
 import { craftCost } from '../core/talents.js';
 import { hasResearch } from '../core/research.js';
@@ -11,21 +12,20 @@ import { query, escapeHtml } from './dom.js';
 import type { Player, CommandPayload, CommandResult } from '../types.js';
 import { challengeDefinition } from '../core/challenges.js';
 import { ELEMENT_BY_ID, REACTION_BY_ID, VESSEL_BY_ID, ENCOUNTERS, RESEARCH } from '../data/content.js';
-import { EQUIPMENT, PASSIVES, SPECIALIZATIONS, QUESTS, COSMETICS } from '../data/systems.js';
+import { EQUIPMENT, PASSIVES, QUESTS, COSMETICS } from '../data/systems.js';
 import { availableVessels, questProgress, analyticsReport } from '../core/meta.js';
 import { rotation } from '../core/modes.js';
 
 const esc = escapeHtml;
 const btn = (label: string, action: string, extra = '', disabled = false) => '<button class="button secondary" data-action="x-' + action + '" ' + extra + (disabled ? ' disabled' : '') + '>' + label + '</button>';
-const options = (ids: string[], selected?: string) => ids.map(id => '<option value="' + id + '" ' + (selected === id ? 'selected' : '') + '>' + ELEMENT_BY_ID[id].name + '</option>').join('');
 const heading = (title: string, description: string) => '<div class="page-heading"><div><div class="eyebrow">THE WORK OF AN ALCHEMIST</div><h1>' + title + '</h1><p>' + description + '</p></div></div>';
 
-export function renderWorkshop(player: Player) {
+export function renderWorkshop(player: Player, selectedElement?: string) {
   return heading('The Artificer’s Workshop', 'Craft tools, refine elements, and shape the way your formation fights.')
     + '<div class="resource-banner"><span>' + player.gold + ' gold</span><span>' + player.essence + ' essence</span><span>' + player.shards + ' relic shards</span><span>' + player.knowledge + ' knowledge</span></div>'
     + '<div class="button-row spaced-heading">' + btn('Craft all affordable tools', 'craft-all') + '</div>'
     + '<h2>Tools with a purpose</h2><div class="research-grid">' + EQUIPMENT.map(e => { const cost = craftCost(player, e); return '<article class="panel content-panel"><div class="eyebrow">' + e.slot + ' · ' + e.rarity + '</div><h2>' + e.name + '</h2><p>' + e.description + '</p>' + (e.requiresResearch ? '<p class="note">Requires research: ' + e.requiresResearch.map(id => RESEARCH.find(r => r.id === id)!.name).join(', ') + '. <a href="#research">Visit research</a></p>' : '') + '<p class="subtle">' + cost.gold + ' gold · ' + cost.essence + ' essence · ' + cost.shards + ' shards</p>' + btn(player.equipment.includes(e.id) ? 'Crafted' : 'Craft ' + e.name, 'craft', 'data-id="' + e.id + '"', player.equipment.includes(e.id) || !hasResearch(player.research, e.requiresResearch) || player.gold < cost.gold || player.essence < cost.essence || player.shards < cost.shards) + '</article>'; }).join('') + '</div>'
-    + '<section class="panel content-panel workshop-evolution"><h2>Change what an element can become.</h2><p>Evolution I extends statuses. Evolution II adds splash damage. Evolution III grants a protective opening ward. Specialization changes behavior, and can be switched freely.</p><div class="form-row"><label>Element<select id="evolution-element">' + options(player.owned) + '</select></label><label>Specialization<select id="specialization">' + SPECIALIZATIONS.map(s => '<option value="' + s.id + '">' + s.name + '</option>').join('') + '</select></label></div><div class="button-row">' + btn('Evolve selected element', 'evolve') + btn('Set specialization', 'specialize') + '</div><p class="subtle">Evolution costs 60/120/180 gold and 15/30/45 essence, with 15/30/45 mastery XP. Current evolutions: ' + (Object.entries(player.evolution).map(([id, n]) => ELEMENT_BY_ID[id].name + ' ' + n).join(', ') || 'none') + '.</p><ul class="plain-list">' + SPECIALIZATIONS.map(s => '<li><strong>' + s.name + ':</strong> ' + s.description + (s.tags ? ' Requires: ' + s.tags.join(' or ') + '.' : '') + '</li>').join('') + '</ul></section>'
+    + renderEvolutionWorkshop(player, selectedElement)
     + renderTalentTree(player)
     + '<h2 class="spaced-heading">A laboratory of your own</h2><div class="research-grid">' + COSMETICS.map(c => '<article class="panel content-panel"><h2 style="color:' + c.color + '">' + c.name + '</h2><p>A cosmetic laboratory palette.</p>' + btn(player.theme === c.id ? 'Selected' : player.cosmetics.includes(c.id) ? 'Apply theme' : c.cost + ' gold', 'cosmetic', 'data-id="' + c.id + '"', player.theme === c.id) + '</article>').join('') + '</div>';
 }
@@ -68,6 +68,7 @@ export async function handleExpansionAction(player: Player, action: string, targ
     default: return;
   }
   helpers.toast(result ? 'Your journal has been updated.' : 'The requirements are not met yet.'); helpers.refresh();
+  if (['evolve', 'specialize'].includes(action)) document.querySelector<HTMLElement>('.workshop-evolution')?.focus({ preventScroll: true });
   if (action === 'talent') document.querySelector<HTMLElement>('.talent-card[data-talent="' + id + '"]')?.focus({ preventScroll: true });
   if (['save-loadout', 'apply-loadout', 'rename-loadout', 'replace-loadout', 'delete-loadout'].includes(action)) {
     const selector = action === 'save-loadout' ? '#loadout-name' : action === 'rename-loadout' ? '#formation-name-' + index : '[data-action="x-' + (action === 'delete-loadout' ? 'apply-loadout' : action) + '"][data-index="' + index + '"]';

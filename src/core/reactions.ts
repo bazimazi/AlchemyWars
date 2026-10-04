@@ -23,12 +23,14 @@ export function compareReactionPriority(a: ReactionDefinition, b: ReactionDefini
 }
 
 export class ReactionEngine {
+  byId = new Map<string, ReactionDefinition>();
   byPair = new Map<string, ReactionDefinition[]>();
   byElement = new Map<string, ReactionDefinition[]>();
   constructor(definitions = REACTIONS) {
     this.byPair = new Map();
     this.byElement = new Map();
     for (const rule of definitions.filter(r => r.enabled)) {
+      this.byId.set(rule.id, rule);
       const key = pairKey(...rule.inputs);
       if (!this.byPair.has(key)) this.byPair.set(key, []);
       this.byPair.get(key)!.push(rule);

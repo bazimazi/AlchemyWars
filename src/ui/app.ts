@@ -1,3 +1,4 @@
+import { renderEvolutionWorkshop, renderEvolutionReport } from './evolution-ui.js';
 import { renderChainReport } from './chain-ui.js';
 import { renderExperimentNotebook, renderClueJournal } from './notebook-ui.js';
 import { renderStoryScene } from './story-ui.js';
@@ -50,7 +51,7 @@ interface UIState {
   page: string; slots: (string | null)[]; active: number; query: string; filter: string; codexTab: string;
   result: ExperimentResult | null; hint: string; environment: string; frozen: boolean; context: ReactionContext; encounter: string;
   battle: BattleResult | null; frame: number; playing: boolean; launching: boolean; speed: number; rewarded: boolean; replay: boolean;
-  fieldClue?: string; campaignRewards?: CampaignRewards; battleId: string; newDiscoveries: string[]; region: string; battleKind: string;
+  workshopElement?: string; fieldClue?: string; campaignRewards?: CampaignRewards; battleId: string; newDiscoveries: string[]; region: string; battleKind: string;
   challenge?: WorldView['challenges'][number] & { available: string[]; steps: Pair[] };
 }
 const ui: UIState = {
@@ -115,7 +116,7 @@ function heading(kicker: string, title: string, text: string, action = '') {
   return '<div class="page-heading"><div><div class="eyebrow">' + kicker + '</div><h1>' + title + '</h1><p>' + text + '</p></div>' + action + '</div>';
 }
 function renderPage() {
-  const renderers: Record<string, () => string> = { home: renderHome, lab: renderLab, team: renderTeam, battle: renderBattle, codex: renderCodex, research: renderResearch, workshop: () => renderWorkshop(player), runs: () => renderRuns(player), journal: () => renderJournal(player), community: () => renderCommunity(player), editor: renderEditor };
+  const renderers: Record<string, () => string> = { home: renderHome, lab: renderLab, team: renderTeam, battle: renderBattle, codex: renderCodex, research: renderResearch, workshop: () => renderWorkshop(player, ui.workshopElement), runs: () => renderRuns(player), journal: () => renderJournal(player), community: () => renderCommunity(player), editor: renderEditor };
   const content = (['home', 'lab', 'team', 'battle', 'codex'].includes(ui.page) ? renderFirstSteps(player) : '') + renderers[ui.page]();
   if (ui.page === 'team') return content + renderFormationTools(player);
   if (ui.page === 'home') return content + '<div class="room-links spaced-heading">' + Object.entries(pages).filter(([id]) => !['home', 'lab', 'team', 'battle', 'codex'].includes(id) && (id !== 'editor' || player.settings.debug)).map(([id, [symbol, name]]) => '<a class="panel room-link" href="#' + id + '">' + icon(symbol) + '<span>' + name + '</span>' + icon('arrow') + '</a>').join('') + '</div>';
@@ -231,7 +232,7 @@ function renderReport() {
     + (valuable ? '<p class="note">Highest damaging reaction: ' + REACTION_BY_ID[valuable[0]].name + ' · ' + Math.round(valuable[1]) + ' damage, including lingering effects.</p>' : '')
     + (ui.newDiscoveries.length && !ui.replay ? '<p class="discovery-report">✦ Added to your codex: ' + ui.newDiscoveries.map(elementName).join(', ') + '.</p>' : '')
     + (!ui.rewarded && !ui.replay ? '<p class="note">Rewards are awaiting server confirmation.</p>' + button('Retry reward claim', 'retry-claim', 'button primary') : '')
-    + renderContributionReport(battle) + renderGuardianReport(battle) + renderChainReport(player, battle)
+    + renderContributionReport(battle) + renderGuardianReport(battle) + renderEvolutionReport(battle) + renderChainReport(player, battle)
     + (victory && ui.rewarded && !ui.replay && ui.battleKind === 'campaign' ? renderStoryScene(player, encounter, 'after') : '')
     + renderBattleLearning(player, battle, ui.rewarded && !ui.replay)
     + '<div class="report-actions">' + button('Continue exploring ' + icon('arrow'), 'leave-battle', 'button primary') + '<a href="#lab" class="button secondary">Back to the laboratory</a>' + button('Replay battle', 'replay-current', 'quiet-link') + '</div></section>';
@@ -443,6 +444,7 @@ document.addEventListener('change', async event => {
   const input = event.target;
   if (!(input instanceof HTMLInputElement || input instanceof HTMLSelectElement)) return;
   try {
+  if (input.id === 'evolution-element') { ui.workshopElement = input.value; query('.workshop-evolution').outerHTML = renderEvolutionWorkshop(player, input.value); query('#evolution-element').focus({ preventScroll: true }); }
   if (input.id === 'environment') ui.environment = input.value;
   if (input.id === 'lab-health') ui.context.healthRatio = Math.max(0, Math.min(100, Number(input.value))) / 100;
   if (input.id === 'lab-enemies') ui.context.enemyCount = Math.max(0, Math.min(10, Math.floor(Number(input.value))));

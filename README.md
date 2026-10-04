@@ -30,6 +30,7 @@ The Assembly screen creates a separate server-backed account. Local journals rem
 - Managed formation libraries, persistent battle-tested build counts, six additional discovery/combat achievements, visible achievement progress and attributable Poison guardian victories.
 - Eighteen permanent talents across six prerequisite branches, prepared experiment slots, expedition clues and rewards, research/crafting perks and reaction-triggered shields.
 - Storm Catalysis recipes form an earnable ten-reaction combat chain. Reports explain its caster, targets and ordered steps; codex sequences prepare individual lab recipes, and allied-only achievement progress persists independently of logs.
+- Three-rank element evolution with eleven family signatures, exact next-rank spending requirements, compatible specializations, retained workshop selection and signature reports/inspection.
 - Mastery, research, equipment, relics, evolution, specialization, quests, achievements and cosmetic themes.
 - Eight-floor roguelite, endless dungeon, changing Infinite Alchemy, daily drafts, procedural boss variants, daily trials, weekly guardians and seasonal festival battles.
 - Temporary run relic/passive drafts, saved conditional experiments, targeting/reaction priorities, guaranteed recovery choices and changing endless floor rules.
@@ -44,12 +45,13 @@ npm ci
 npx playwright install chromium
 npm run verify
 npm run balance -- 100 --report
+npm run balance -- 20 --evolved --report
 npm run balance:runs -- 20 --report
 ```
 
-`verify` compiles all source and tests with strict TypeScript, runs 321 engine/server tests, validates and builds `dist/`, then runs 74 desktop/mobile browser tests. TypeScript and Node typings provide strict checks; Playwright supplies isolated browser automation. The game and server have no runtime dependencies.
+`verify` compiles all source and tests with strict TypeScript, runs 344 engine/server tests, validates and builds `dist/`, then runs 80 desktop/mobile browser tests. TypeScript and Node typings provide strict checks; Playwright supplies isolated browser automation. The game and server have no runtime dependencies.
 
-`npm run balance -- 100 --all --report` includes every campaign stage. Generated findings are written to [docs/BALANCE.md](docs/BALANCE.md).
+`npm run balance -- 100 --all --report` includes every campaign stage. Generated findings are written to [docs/BALANCE.md](docs/BALANCE.md). `--evolved` samples rank-three formations and writes a separate [evolution report](docs/EVOLUTION-BALANCE.md), including signature activations.
 
 `balance:runs` compares recovery and drafting policies across all four run modes, normalizing saves between battles and capping endless samples at floor sixteen. Findings are written to [docs/RUN-BALANCE.md](docs/RUN-BALANCE.md); they describe fixed policies, not optimal play.
 
@@ -60,6 +62,6 @@ For development, `npm run dev` recompiles source changes and restarts its server
 - [Implementation, architecture and operational notes](docs/IMPLEMENTATION.md)
 - [Section-by-section specification coverage](docs/COVERAGE.md)
 - [Original specification](docs/SPECIFICATION.md)
-- [Latest implementation: storm chains and causal reports](docs/MILESTONE-0.11.md)
+- [Latest implementation: evolution signatures and workshop](docs/MILESTONE-0.12.md)
 
 The implementation exceeds the specification's numerical MVP content targets. Human campaign duration, retention, long-term enjoyment and physical-device 60 FPS remain validation targets, not claims established by automated tests.

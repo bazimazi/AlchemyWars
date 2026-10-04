@@ -1,4 +1,5 @@
 import { validateUnitMechanics } from './unit-rules.js';
+import { EVOLUTION_TRAITS, validateEvolutionTraits } from './evolution.js';
 import { validateTalentTree } from './talent-rules.js';
 import { TALENTS } from './systems.js';
 import { STORM_CATALYSIS_RECIPES } from './storm-catalysis.js';
@@ -13,7 +14,7 @@ const status = (id: string, duration: number, intensity = 1, extra: { recipient?
 const damage = (scale: number, extra: { recipient?: Effect["recipient"]; stacks?: number } = {}): Effect => ({ type: 'damage', scale, ...extra });
 const chain = (scale: number, count = 2): Effect => ({ type: 'chain', scale, count, status: 'shock', element: 'lightning' });
 
-export let CONTENT_VERSION = '0.11.0';
+export let CONTENT_VERSION = '0.12.0';
 export function setContentVersion(version: string) { CONTENT_VERSION = version; }
 export const BALANCE = {
   step: 0.25, maxTime: 90, maxChainDepth: 4, maxEventsPerAction: 80,
@@ -147,7 +148,7 @@ export const ENCOUNTERS: Encounter[] = [
 export const ENCOUNTER_BY_ID: Record<string, Encounter> = Object.assign(Object.create(null), Object.fromEntries(ENCOUNTERS.map(e => [e.id, e])));
 
 export function validateContent() {
-  const issues = validateTalentTree(TALENTS);
+  const issues = [...validateTalentTree(TALENTS), ...validateEvolutionTraits(EVOLUTION_TRAITS, id => typeof id === 'string' && Object.hasOwn(STATUSES, id))];
   for (const collection of [ELEMENTS, REACTIONS, VESSELS, ENEMIES, RELICS, RESEARCH, ENCOUNTERS]) {
     const seen = new Set();
     for (const entry of collection) {

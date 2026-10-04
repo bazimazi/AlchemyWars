@@ -1,3 +1,4 @@
+import { EVOLUTION_TRAITS } from '../data/evolution.js';
 import type { Player, Encounter, BattleResult, BattleFrame, UnitDefinition } from '../types.js';
 import { ELEMENT_BY_ID, ENEMY_BY_ID, VESSEL_BY_ID, STATUSES, REACTION_BY_ID } from '../data/content.js';
 import { ABILITIES } from '../data/units.js';
@@ -28,12 +29,14 @@ export function renderUnitInspector(frame: BattleFrame, id: string) {
   if (!unit) return '';
   const definition = ENEMY_BY_ID[unit.definitionId] ?? VESSEL_BY_ID[unit.definitionId];
   const allBehaviors = behaviors(definition);
-  const labels = [...ABILITIES, ...PASSIVES, MASTERY_REWARDS.passive, ...TALENTS.flatMap(t => t.passive ? [t.passive] : []), ...allBehaviors];
+  const labels = [...ABILITIES, ...PASSIVES, MASTERY_REWARDS.passive, ...TALENTS.flatMap(t => t.passive ? [t.passive] : []), ...allBehaviors, ...EVOLUTION_TRAITS];
   const cooldowns = Object.entries(unit.cooldowns).filter(([, expires]) => expires > frame.time).map(([key, expires]) => {
     const id = key.split(':').at(-1)!;
-    return (labels.find(a => a.id === id)?.name ?? REACTION_BY_ID[id]?.name ?? 'Elemental effect') + ' · ' + (expires - frame.time).toFixed(1) + 's';
+    const prefix = key.startsWith("evolution:") ? (ELEMENT_BY_ID[key.split(":")[1]]?.name ?? "Element") + ": " : "";
+    return prefix + (labels.find(a => a.id === id)?.name ?? REACTION_BY_ID[id]?.name ?? 'Elemental effect') + ' · ' + (expires - frame.time).toFixed(1) + 's';
   });
   return '<div class="unit-inspector"><span class="eyebrow">BATTLE SNAPSHOT · ' + frame.time.toFixed(2) + 's</span><h2>' + esc(unit.name) + '</h2><p>' + (unit.side === 'ally' ? 'Your formation' : 'Opposition') + ' · position ' + (unit.position + 1) + '</p><p>Health ' + unit.hp + ' / ' + unit.maxHp + ' · shield ' + unit.shield + '</p><h3>Current elements</h3><p>' + esc(elements(unit.elements)) + '</p><p>Phase: ' + esc(unit.phaseLabel ?? 'Opening phase') + ' · Immunities: ' + esc(statusNames(unit.immunities)) + '</p><h3>Active statuses</h3><p>' + (unit.statuses.map(s => esc(STATUSES[s.id].name) + ' × ' + s.stacks + ' · ' + s.remaining.toFixed(1) + 's').join('<br>') || 'None') + '</p><h3>Elemental residues</h3><p>' + (Object.entries(unit.residues).filter(([, expires]) => expires > frame.time).map(([element, expires]) => esc(ELEMENT_BY_ID[element].name) + ' · ' + (expires - frame.time).toFixed(1) + 's').join('<br>') || 'None') + '</p><h3>Ready again in</h3><p>' + (cooldowns.map(esc).join('<br>') || 'No active cooldowns') + '</p>'
+    + (unit.evolutionTraits.length ? '<h3>Evolution signatures</h3>' + unit.evolutionTraits.map(t => '<p><strong>' + esc(ELEMENT_BY_ID[t.element].name) + ': ' + esc(EVOLUTION_TRAITS.find(trait => trait.id === t.trait)!.name) + '</strong><br>' + esc(EVOLUTION_TRAITS.find(trait => trait.id === t.trait)!.description) + '</p>').join('') : '')
     + unit.behaviors.map(id => { const b = allBehaviors.find(b => b.id === id)!; return '<p class="note"><strong>' + esc(b.name) + '</strong><br>' + esc(b.description ?? '') + '</p>'; }).join('') + '</div>';
 }
 

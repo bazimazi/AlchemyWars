@@ -1,3 +1,4 @@
+import { evolutionLevel } from './evolution.js';
 import { normalizeTalents } from './talents.js';
 import { abilitySlots } from './research.js';
 import { validAbilities } from '../data/units.js';
@@ -22,7 +23,7 @@ export function normalizeReplay(value: unknown): BattleConfig | null {
     const config: BattleConfig = { contentVersion: CONTENT_VERSION, seed: raw.seed >>> 0, encounterId: raw.encounterId, team: team(raw.team), research: RESEARCH.filter(r => raw.research?.includes(r.id)).map(r => r.id), talents: normalizeTalents(raw.talents), mastery: {}, evolution: {}, specializations: {} };
     if (raw.vesselXp) config.vesselXp = Object.fromEntries(Object.entries(raw.vesselXp).filter(([id, xp]) => VESSEL_BY_ID[id] && numeric(xp, 450)));
     for (const [id, n] of Object.entries(raw.mastery ?? {})) if (ELEMENT_BY_ID[id] && numeric(n, 1e9)) config.mastery[id] = n;
-    for (const [id, n] of Object.entries(raw.evolution ?? {})) if (ELEMENT_BY_ID[id] && numeric(n, 3)) config.evolution![id] = n;
+    for (const [id, n] of Object.entries(raw.evolution ?? {})) if (ELEMENT_BY_ID[id] && numeric(n, 3)) config.evolution![id] = evolutionLevel(n);
     for (const [id, specialization] of Object.entries(raw.specializations ?? {})) if (ELEMENT_BY_ID[id] && SPECIALIZATIONS.some(s => s.id === specialization)) config.specializations![id] = specialization;
     if (raw.encounter) {
       const e = raw.encounter;
