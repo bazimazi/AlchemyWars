@@ -1,15 +1,15 @@
 # Seeded run report
 
-Content 0.9.0. 20 seeds per scenario, with reload normalization between battles. Draft pool and expedition rule use 2026-10-03 UTC. Endless scenarios stop at floor 16; a capped run is not a completed endless mode.
+Content 0.10.0. 20 seeds per scenario, with reload normalization between battles. Draft pool and expedition rule use 2026-10-03 UTC. Endless scenarios stop at floor 16; a capped run is not a completed endless mode.
 
 Rest always chooses recovery. Draft chooses a build upgrade/tool when every vessel has at least 60% health, otherwise recovery; it equips the first drafted relic/passive and seeks reactions. These fixed policies explore reproducible routes, not optimal play or human pacing. Account upgrades are absent.
 
 ```json
 {
-  "content": "0.9.0",
+  "content": "0.10.0",
   "runs": 280,
   "battles": 2384,
-  "elapsedSeconds": 5.43,
+  "elapsedSeconds": 6.94,
   "ceiling": 16
 }
 ```

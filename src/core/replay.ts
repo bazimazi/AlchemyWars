@@ -1,8 +1,9 @@
+import { normalizeTalents } from './talents.js';
 import { abilitySlots } from './research.js';
 import { validAbilities } from '../data/units.js';
 import type { BattleConfig, Loadout } from '../types.js';
 import { CONTENT_VERSION, ELEMENT_BY_ID, VESSEL_BY_ID, RELIC_BY_ID, ENEMY_BY_ID, ENCOUNTER_BY_ID, RESEARCH, REACTION_BY_ID, STATUSES } from '../data/content.js';
-import { TALENTS, PASSIVES, EQUIPMENT, SPECIALIZATIONS, ENVIRONMENTS, BOSS_AFFIXES } from '../data/systems.js';
+import { PASSIVES, EQUIPMENT, SPECIALIZATIONS, ENVIRONMENTS, BOSS_AFFIXES } from '../data/systems.js';
 const numeric = (value: unknown, max = 10000) : value is number => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= max;
 const text = (value: unknown) => typeof value === 'string' ? value.replace(/[<>"`]/g, '').slice(0, 500) : '';
 function team(value: unknown): Loadout[] {
@@ -18,7 +19,7 @@ export function normalizeReplay(value: unknown): BattleConfig | null {
   const raw = value as BattleConfig;
   try {
     if (!raw || raw.contentVersion !== CONTENT_VERSION || !Number.isInteger(raw.seed)) return null;
-    const config: BattleConfig = { contentVersion: CONTENT_VERSION, seed: raw.seed >>> 0, encounterId: raw.encounterId, team: team(raw.team), research: RESEARCH.filter(r => raw.research?.includes(r.id)).map(r => r.id), talents: TALENTS.filter(t => raw.talents?.includes(t.id)).map(t => t.id), mastery: {}, evolution: {}, specializations: {} };
+    const config: BattleConfig = { contentVersion: CONTENT_VERSION, seed: raw.seed >>> 0, encounterId: raw.encounterId, team: team(raw.team), research: RESEARCH.filter(r => raw.research?.includes(r.id)).map(r => r.id), talents: normalizeTalents(raw.talents), mastery: {}, evolution: {}, specializations: {} };
     if (raw.vesselXp) config.vesselXp = Object.fromEntries(Object.entries(raw.vesselXp).filter(([id, xp]) => VESSEL_BY_ID[id] && numeric(xp, 450)));
     for (const [id, n] of Object.entries(raw.mastery ?? {})) if (ELEMENT_BY_ID[id] && numeric(n, 1e9)) config.mastery[id] = n;
     for (const [id, n] of Object.entries(raw.evolution ?? {})) if (ELEMENT_BY_ID[id] && numeric(n, 3)) config.evolution![id] = n;

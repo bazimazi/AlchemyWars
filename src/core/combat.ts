@@ -1,7 +1,7 @@
 import { ObjectPool } from './pool.js';
 import { abilitySlots } from './research.js';
 import { ABILITIES, VESSEL_PROFILES, vesselLevel, validAbilities } from '../data/units.js';
-import type { Player, BattleConfig, CombatUnit, BattleEvent, BattleFrame, BattleReport, BattleResult, Effect, UnitDefinition, Loadout, Side, StatusModifier, Specialization, ChainContext, ElementApplication, ReactionDefinition } from '../types.js';
+import type { Player, BattleConfig, CombatUnit, BattleEvent, BattleFrame, BattleReport, BattleResult, Effect, UnitDefinition, Loadout, Side, StatusModifier, Specialization, ChainContext, ElementApplication, ReactionDefinition, Passive } from '../types.js';
 import { BALANCE, CONTENT_VERSION, ELEMENT_BY_ID, VESSEL_BY_ID, ENEMY_BY_ID, ENCOUNTER_BY_ID, RELIC_BY_ID, RESEARCH, STATUSES } from '../data/content.js';
 import { compareReactionPriority, reactionEngine } from './reactions.js';
 import { TALENTS, PASSIVES, EQUIPMENT, SPECIALIZATIONS, ENVIRONMENTS, AFFINITIES, MASTERY_REWARDS, BOSS_AFFIXES } from '../data/systems.js';
@@ -51,6 +51,8 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
   const encounter = config.encounter ?? ENCOUNTER_BY_ID[config.encounterId];
   const environment = ENVIRONMENTS[encounter.environment] ?? ENVIRONMENTS.neutral;
   const accountModifiers = config.normalized ? mergeModifiers(config.modifiers) : mergeModifiers(...RESEARCH.filter(r => config.research?.includes(r.id)).map(r => r.modifiers), ...TALENTS.filter(t => config.talents?.includes(t.id)).map(t => t.modifiers), config.modifiers);
+  const talentPassives: Record<string, Passive[]> = {};
+  if (!config.normalized) for (const talent of TALENTS) if (config.talents?.includes(talent.id) && talent.passive?.trigger) (talentPassives[talent.passive.trigger] ??= []).push(talent.passive);
   const masteryLevels = config.normalized ? {} : Object.fromEntries(Object.entries(config.mastery ?? {}).map(([id, xp]) => [id, Math.min(10, Math.floor(xp / BALANCE.masteryThreshold))]));
   const evolution = (id: string) => config.normalized ? 0 : config.evolution?.[id] ?? 0;
   const emptySpecialization: Partial<Specialization> = {};
@@ -345,7 +347,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
         }
         const learned = PASSIVES.find(p => p.id === unit.passive && p.trigger === event.trigger);
         const masteryPassive = unit.side === 'ally' && !config.normalized && (config.mastery?.[unit.elements[0]] ?? 0) >= MASTERY_REWARDS.passiveLevel * BALANCE.masteryThreshold && MASTERY_REWARDS.passive.trigger === event.trigger ? MASTERY_REWARDS.passive : null;
-        for (const passive of [learned, masteryPassive].filter(Boolean)) {
+        for (const passive of [learned, masteryPassive, ...(unit.side === 'ally' ? talentPassives[event.trigger!] ?? [] : [])].filter(Boolean)) {
         if (!passive) continue;
         const key = unit.id + ':' + passive.id;
         if (triggered.has(key) || (unit.cooldowns[key] ?? -1) > time) continue;

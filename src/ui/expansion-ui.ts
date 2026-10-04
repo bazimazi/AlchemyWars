@@ -1,3 +1,5 @@
+import { renderTalentTree } from './talent-ui.js';
+import { craftCost } from '../core/talents.js';
 import { hasResearch } from '../core/research.js';
 import { renderDailyGoals } from './learning-ui.js';
 import { renderFormationLibrary } from './formation-ui.js';
@@ -9,7 +11,7 @@ import { query, escapeHtml } from './dom.js';
 import type { Player, CommandPayload, CommandResult } from '../types.js';
 import { challengeDefinition } from '../core/challenges.js';
 import { ELEMENT_BY_ID, REACTION_BY_ID, VESSEL_BY_ID, ENCOUNTERS, RESEARCH } from '../data/content.js';
-import { TALENTS, EQUIPMENT, PASSIVES, SPECIALIZATIONS, QUESTS, COSMETICS } from '../data/systems.js';
+import { EQUIPMENT, PASSIVES, SPECIALIZATIONS, QUESTS, COSMETICS } from '../data/systems.js';
 import { availableVessels, questProgress, analyticsReport } from '../core/meta.js';
 import { rotation } from '../core/modes.js';
 
@@ -22,9 +24,9 @@ export function renderWorkshop(player: Player) {
   return heading('The Artificer’s Workshop', 'Craft tools, refine elements, and shape the way your formation fights.')
     + '<div class="resource-banner"><span>' + player.gold + ' gold</span><span>' + player.essence + ' essence</span><span>' + player.shards + ' relic shards</span><span>' + player.knowledge + ' knowledge</span></div>'
     + '<div class="button-row spaced-heading">' + btn('Craft all affordable tools', 'craft-all') + '</div>'
-    + '<h2>Tools with a purpose</h2><div class="research-grid">' + EQUIPMENT.map(e => '<article class="panel content-panel"><div class="eyebrow">' + e.slot + ' · ' + e.rarity + '</div><h2>' + e.name + '</h2><p>' + e.description + '</p>' + (e.requiresResearch ? '<p class="note">Requires research: ' + e.requiresResearch.map(id => RESEARCH.find(r => r.id === id)!.name).join(', ') + '. <a href="#research">Visit research</a></p>' : '') + '<p class="subtle">' + e.gold + ' gold · ' + e.essence + ' essence · ' + e.shards + ' shards</p>' + btn(player.equipment.includes(e.id) ? 'Crafted' : 'Craft ' + e.name, 'craft', 'data-id="' + e.id + '"', player.equipment.includes(e.id) || !hasResearch(player.research, e.requiresResearch) || player.gold < e.gold || player.essence < e.essence || player.shards < e.shards) + '</article>').join('') + '</div>'
+    + '<h2>Tools with a purpose</h2><div class="research-grid">' + EQUIPMENT.map(e => { const cost = craftCost(player, e); return '<article class="panel content-panel"><div class="eyebrow">' + e.slot + ' · ' + e.rarity + '</div><h2>' + e.name + '</h2><p>' + e.description + '</p>' + (e.requiresResearch ? '<p class="note">Requires research: ' + e.requiresResearch.map(id => RESEARCH.find(r => r.id === id)!.name).join(', ') + '. <a href="#research">Visit research</a></p>' : '') + '<p class="subtle">' + cost.gold + ' gold · ' + cost.essence + ' essence · ' + cost.shards + ' shards</p>' + btn(player.equipment.includes(e.id) ? 'Crafted' : 'Craft ' + e.name, 'craft', 'data-id="' + e.id + '"', player.equipment.includes(e.id) || !hasResearch(player.research, e.requiresResearch) || player.gold < cost.gold || player.essence < cost.essence || player.shards < cost.shards) + '</article>'; }).join('') + '</div>'
     + '<section class="panel content-panel workshop-evolution"><h2>Change what an element can become.</h2><p>Evolution I extends statuses. Evolution II adds splash damage. Evolution III grants a protective opening ward. Specialization changes behavior, and can be switched freely.</p><div class="form-row"><label>Element<select id="evolution-element">' + options(player.owned) + '</select></label><label>Specialization<select id="specialization">' + SPECIALIZATIONS.map(s => '<option value="' + s.id + '">' + s.name + '</option>').join('') + '</select></label></div><div class="button-row">' + btn('Evolve selected element', 'evolve') + btn('Set specialization', 'specialize') + '</div><p class="subtle">Evolution costs 60/120/180 gold and 15/30/45 essence, with 15/30/45 mastery XP. Current evolutions: ' + (Object.entries(player.evolution).map(([id, n]) => ELEMENT_BY_ID[id].name + ' ' + n).join(', ') || 'none') + '.</p><ul class="plain-list">' + SPECIALIZATIONS.map(s => '<li><strong>' + s.name + ':</strong> ' + s.description + (s.tags ? ' Requires: ' + s.tags.join(' or ') + '.' : '') + '</li>').join('') + '</ul></section>'
-    + '<h2>Paths of study</h2><div class="research-grid">' + TALENTS.map(t => '<article class="panel content-panel"><div class="eyebrow">' + t.branch + '</div><h2>' + t.name + '</h2><p>' + t.description + '</p>' + (t.requires ? '<p class="subtle">Requires ' + TALENTS.find(x => x.id === t.requires)!.name + '</p>' : '') + btn(player.talents.includes(t.id) ? 'Learned' : 'Learn · ' + t.cost + ' knowledge', 'talent', 'data-id="' + t.id + '"', player.talents.includes(t.id) || player.knowledge < t.cost || Boolean(t.requires && !player.talents.includes(t.requires))) + '</article>').join('') + '</div>'
+    + renderTalentTree(player)
     + '<h2 class="spaced-heading">A laboratory of your own</h2><div class="research-grid">' + COSMETICS.map(c => '<article class="panel content-panel"><h2 style="color:' + c.color + '">' + c.name + '</h2><p>A cosmetic laboratory palette.</p>' + btn(player.theme === c.id ? 'Selected' : player.cosmetics.includes(c.id) ? 'Apply theme' : c.cost + ' gold', 'cosmetic', 'data-id="' + c.id + '"', player.theme === c.id) + '</article>').join('') + '</div>';
 }
 
@@ -66,6 +68,7 @@ export async function handleExpansionAction(player: Player, action: string, targ
     default: return;
   }
   helpers.toast(result ? 'Your journal has been updated.' : 'The requirements are not met yet.'); helpers.refresh();
+  if (action === 'talent') document.querySelector<HTMLElement>('.talent-card[data-talent="' + id + '"]')?.focus({ preventScroll: true });
   if (['save-loadout', 'apply-loadout', 'rename-loadout', 'replace-loadout', 'delete-loadout'].includes(action)) {
     const selector = action === 'save-loadout' ? '#loadout-name' : action === 'rename-loadout' ? '#formation-name-' + index : '[data-action="x-' + (action === 'delete-loadout' ? 'apply-loadout' : action) + '"][data-index="' + index + '"]';
     const control = document.querySelector<HTMLElement>(selector) ?? document.querySelector<HTMLElement>('.saved-formation:last-child [data-action="x-apply-loadout"]') ?? document.querySelector<HTMLElement>('#loadout-name');

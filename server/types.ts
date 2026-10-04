@@ -1,10 +1,10 @@
 import type { ContentRelease } from '../src/core/releases.js';
-import type { Player, BattleConfig, ReactionDefinition } from '../src/types.js';
+import type { Player, BattleConfig, ReactionDefinition, CampaignRewards } from '../src/types.js';
 import type { rotation } from '../src/core/modes.js';
 export interface User { id: string; name: string; salt: string; passwordHash: string; player: Player; createdAt: number; rating: number; season: string; friends: string[]; requests: string[]; guildId: string | null; pvpClaims: string[]; challengeClaims: string[]; raidClaimWeek?: number; warClaims?: string[]; guildActions?: string[]; guildClaims?: string[]; competition?: { week: number; elementScore: number; weeklyScore: number; claims: string[] } }
 export interface GuildWeek { week: number; donations: number; experiments: number; battles: number; contributors: string[]; project: { target: string; progress: number; goal: number; contributors: Record<string,number> } }
 export interface Guild { id: string; name: string; owner: string | null; members: string[]; knowledge: number; research: number; discoveries: string[]; donations: Record<string,number>; rewardClaims: string[]; raid: { week: number; health: number; damage: Record<string,number>; claims: string[] }; war?: { week: number; score: number; claims: string[] }; elements?: Record<string,number>; activity?: GuildWeek }
-export interface BattleClaim { outcome: string; discoveries: string[]; duration: number; claimed?: boolean; guildScore?: number; raidDamage?: number }
+export interface BattleClaim { outcome: string; discoveries: string[]; duration: number; claimed?: boolean; guildScore?: number; raidDamage?: number; clue?: string; rewards?: CampaignRewards }
 export interface PendingBattle { userId: string; config: BattleConfig; kind: string; opponentId: string | null; guildId: string | null; createdAt: number; claimed: boolean; result?: BattleClaim }
 export interface LiveConfig { revision: number; enabled: boolean; seasonName: string | null; announcements: string[]; mutator?: string | null }
 export interface WorldData { releases?: ContentRelease[]; version: number; users: User[]; sessions: Record<string,{ userId: string; expires: number }>; battles: Record<string,PendingBattle>; guilds: Guild[]; challenges: { id: string; name: string; author: string; target: string; allowed: string[]; at: number }[]; shares: { id: string; author: string; reaction: string; at: number }[]; live: LiveConfig }

@@ -2,14 +2,27 @@ import type { Talent, Passive, Equipment, Specialization, Quest, Modifiers, Envi
 const meta = { version: 1, enabled: true, releaseDate: '2026-10-01' };
 export const DISCOVERY_REWARDS = { dailyGoal: { gold: 25, knowledge: 3, essence: 5 }, challengeSolver: { xp: 20, knowledge: 3 }, challengeCreatorXp: 10 };
 export const MASTERY_REWARDS = { spreadLevel: 3, variantLevel: 5, durationLevel: 5, durationBonus: 1, passiveLevel: 7, experimentLevel: 10, maximumLevel: 10, passive: { id: 'mastery-echo', name: 'Mastery Echo', trigger: 'OnKill', cooldown: 8, effects: [{ type: 'explode', scale: .35, count: 3 }] } satisfies Passive };
-export const TALENTS: Talent[] = [
+export const TALENT_BRANCHES = ['Alchemy', 'Combat', 'Discovery', 'Research', 'Exploration', 'Economy'] as const;
+export const TALENTS: Talent[] = ([
   { id: 'careful-notes', branch: 'Discovery', name: 'Careful Notes', cost: 10, description: 'Discoveries award 2 extra knowledge.', modifiers: { discoveryKnowledge: 2 } },
   { id: 'patient-scholar', branch: 'Research', name: 'Patient Scholar', cost: 15, requires: 'careful-notes', description: 'Research costs 20% less knowledge.', modifiers: { researchDiscount: .2 } },
   { id: 'field-alchemist', branch: 'Exploration', name: 'Field Alchemist', cost: 10, description: 'Victories award 3 additional essence.', modifiers: { battleEssence: 3 } },
   { id: 'salvager', branch: 'Economy', name: 'Salvager', cost: 15, requires: 'field-alchemist', description: 'Victories award an additional relic shard.', modifiers: { battleShards: 1 } },
   { id: 'deep-binding', branch: 'Combat', name: 'Deep Binding', cost: 15, description: 'Each vessel begins battle with 50 shield.', modifiers: { startingShield: 50 } },
   { id: 'reaction-scholar', branch: 'Alchemy', name: 'Reaction Scholar', cost: 20, requires: 'deep-binding', description: 'Reaction chains can travel one additional level.', modifiers: { chainDepth: 1 } },
-].map(x => ({ ...meta, tags: [x.branch.toLowerCase()], ...x }));
+  { id: 'parallel-notes', branch: 'Alchemy', name: 'Parallel Notes', cost: 20, requires: 'reaction-scholar', description: 'Keep two prepared experiments in your laboratory notebook instead of one.', modifiers: {}, perks: { experimentSlots: 1 } },
+  { id: 'recursive-binding', branch: 'Alchemy', name: 'Recursive Binding', cost: 40, requires: 'parallel-notes', description: 'Reaction chains can travel two additional levels.', modifiers: { chainDepth: 2 } },
+  { id: 'reaction-conduit', branch: 'Combat', name: 'Reaction Conduit', cost: 20, requires: 'deep-binding', description: 'Chain effects can reach one additional target.', modifiers: { chainTargets: 1 } },
+  { id: 'reactive-ward', branch: 'Combat', name: 'Reactive Ward', cost: 25, requires: 'reaction-conduit', description: 'A vessel triggering a reaction gains a shield worth half its attack, once every 6 seconds. Applies in account PvE battles.', modifiers: {}, passive: { id: 'talent-reactive-ward', name: 'Reactive Ward', trigger: 'OnReaction', cooldown: 6, effects: [{ type: 'shield', scale: .5, recipient: 'source' }] } },
+  { id: 'field-clues', branch: 'Discovery', name: 'Field Clues', cost: 20, requires: 'careful-notes', description: 'First victories in campaign encounters have a 35% chance to uncover an accessible reaction clue.', modifiers: {}, perks: { fieldClueChance: .35 } },
+  { id: 'gentle-guidance', branch: 'Discovery', name: 'Gentle Guidance', cost: 25, requires: 'field-clues', description: 'Laboratory hints cost 1 less knowledge, with a minimum cost of 1.', modifiers: {}, perks: { hintDiscount: 1 } },
+  { id: 'focused-study', branch: 'Research', name: 'Focused Study', cost: 25, requires: 'patient-scholar', description: 'Research costs a further 10% less knowledge, for a total discount of 30%.', modifiers: { researchDiscount: .1 } },
+  { id: 'applied-research', branch: 'Research', name: 'Applied Research', cost: 25, requires: 'focused-study', description: 'Completing a new research study awards 3 essence.', modifiers: {}, perks: { researchEssence: 3 } },
+  { id: 'first-survey', branch: 'Exploration', name: 'First Survey', cost: 20, requires: 'field-alchemist', description: 'The first victory in each campaign encounter awards 3 extra knowledge.', modifiers: {}, perks: { firstClearKnowledge: 3 } },
+  { id: 'guardian-bounty', branch: 'Exploration', name: 'Guardian Bounty', cost: 25, requires: 'first-survey', description: 'The first victory against each campaign guardian awards 2 extra relic shards.', modifiers: {}, perks: { firstBossClearShards: 2 } },
+  { id: 'careful-crafting', branch: 'Economy', name: 'Careful Crafting', cost: 20, requires: 'salvager', description: 'Crafting costs 15% less gold, rounded up to a whole resource.', modifiers: {}, perks: { craftGoldDiscount: .15 } },
+  { id: 'material-steward', branch: 'Economy', name: 'Material Steward', cost: 25, requires: 'careful-crafting', description: 'Crafting costs 20% less essence, rounded up to a whole resource.', modifiers: {}, perks: { craftEssenceDiscount: .2 } },
+] satisfies Omit<Talent, 'tags'>[]).map(x => ({ ...meta, tags: [x.branch.toLowerCase()], ...x }));
 export const PASSIVES: Passive[] = ([
   { id: 'none', name: 'No passive', description: 'An open passive slot.', trigger: null, effects: [] },
   { id: 'first-ward', name: 'First Ward', description: 'Gain a barrier when battle begins.', trigger: 'OnBattleStart', cooldown: 90, effects: [{ type: 'status', status: 'barrier', duration: 8, intensity: .25, recipient: 'source' }] },

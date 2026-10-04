@@ -1,3 +1,4 @@
+import { craftCost } from './talents.js';
 import { hasResearch } from './research.js';
 export { saveLoadout, applyLoadout, renameLoadout, replaceLoadout, deleteLoadout } from './formations.js';
 import type { Player, MetaProgress, NumericModifier, Research, Quest } from '../types.js';
@@ -6,21 +7,23 @@ import { VESSELS, ELEMENT_BY_ID } from '../data/content.js';
 import { TALENTS, EQUIPMENT, SPECIALIZATIONS, QUESTS, ACHIEVEMENTS, PASSIVES, COSMETICS } from '../data/systems.js';
 
 export function metaDefaults(): MetaProgress {
-  return { creatureKnowledge: {}, learning: learningDefaults(), vesselXp: {}, chains: [], creatures: [], activeDays: [new Date().toISOString().slice(0, 10)], createdAt: Date.now(), essence: 0, shards: 0, talents: [], equipment: [], evolution: {}, specializations: {}, quests: [], achievements: [], achievementClaims: [], reactionWins: {}, discoveryDates: {}, runsWon: 0, endlessBest: 0, run: null, loadouts: [], cosmetics: ['observatory'], theme: 'observatory', analytics: [{ name: 'tutorial_started', at: Date.now() }], dailyClaims: [], highestChain: 0 };
+  return { creatureKnowledge: {}, learning: learningDefaults(), vesselXp: {}, chains: [], creatures: [], activeDays: [new Date().toISOString().slice(0, 10)], createdAt: Date.now(), essence: 0, shards: 0, talents: [], equipment: [], evolution: {}, specializations: {}, quests: [], achievements: [], achievementClaims: [], reactionWins: {}, discoveryDates: {}, runsWon: 0, endlessBest: 0, run: null, loadouts: [], experimentNotes: [], cosmetics: ['observatory'], theme: 'observatory', analytics: [{ name: 'tutorial_started', at: Date.now() }], dailyClaims: [], highestChain: 0 };
 }
 export function talentModifier(player: Player, key: NumericModifier) {
   return TALENTS.filter(t => player.talents?.includes(t.id)).reduce((sum, t) => sum + (t.modifiers[key] ?? 0), 0);
 }
-export function researchCost(player: Player, definition: Research) { return Math.ceil(definition.cost * (1 - talentModifier(player, 'researchDiscount'))); }
+export function researchCost(player: Player, definition: Research) { return Math.ceil(definition.cost * (1 - Math.min(.5, talentModifier(player, 'researchDiscount')))); }
 export function learnTalent(player: Player, id: string) {
   const talent = TALENTS.find(t => t.id === id);
-  if (!talent || player.talents.includes(id) || player.knowledge < talent.cost || talent.requires && !player.talents.includes(talent.requires)) return false;
+  if (!talent || talent.enabled === false || player.talents.includes(id) || player.knowledge < talent.cost || talent.requires && !player.talents.includes(talent.requires)) return false;
   player.knowledge -= talent.cost; player.talents.push(id); return true;
 }
 export function craftEquipment(player: Player, id: string) {
   const item = EQUIPMENT.find(e => e.id === id);
-  if (!item || !hasResearch(player.research, item.requiresResearch) || player.equipment.includes(id) || player.gold < item.gold || player.essence < item.essence || player.shards < item.shards) return false;
-  player.gold -= item.gold; player.essence -= item.essence; player.shards -= item.shards; player.equipment.push(id); return true;
+  if (!item) return false;
+  const cost = craftCost(player, item);
+  if (!hasResearch(player.research, item.requiresResearch) || player.equipment.includes(id) || player.gold < cost.gold || player.essence < cost.essence || player.shards < cost.shards) return false;
+  player.gold -= cost.gold; player.essence -= cost.essence; player.shards -= cost.shards; player.equipment.push(id); return true;
 }
 export function equipItem(player: Player, index: number, id: string) {
   const unit = player.team[index], item = EQUIPMENT.find(e => e.id === id);

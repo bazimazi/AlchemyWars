@@ -1,7 +1,7 @@
 import type { Player, Encounter, BattleResult, BattleFrame, UnitDefinition } from '../types.js';
 import { ELEMENT_BY_ID, ENEMY_BY_ID, VESSEL_BY_ID, STATUSES, REACTION_BY_ID } from '../data/content.js';
 import { ABILITIES } from '../data/units.js';
-import { PASSIVES, MASTERY_REWARDS } from '../data/systems.js';
+import { PASSIVES, MASTERY_REWARDS, TALENTS } from '../data/systems.js';
 import { escapeHtml as esc } from './dom.js';
 
 const statusNames = (ids: string[] = []) => ids.map(id => STATUSES[id].name).join(', ') || 'none';
@@ -28,7 +28,7 @@ export function renderUnitInspector(frame: BattleFrame, id: string) {
   if (!unit) return '';
   const definition = ENEMY_BY_ID[unit.definitionId] ?? VESSEL_BY_ID[unit.definitionId];
   const allBehaviors = behaviors(definition);
-  const labels = [...ABILITIES, ...PASSIVES, MASTERY_REWARDS.passive, ...allBehaviors];
+  const labels = [...ABILITIES, ...PASSIVES, MASTERY_REWARDS.passive, ...TALENTS.flatMap(t => t.passive ? [t.passive] : []), ...allBehaviors];
   const cooldowns = Object.entries(unit.cooldowns).filter(([, expires]) => expires > frame.time).map(([key, expires]) => {
     const id = key.split(':').at(-1)!;
     return (labels.find(a => a.id === id)?.name ?? REACTION_BY_ID[id]?.name ?? 'Elemental effect') + ' · ' + (expires - frame.time).toFixed(1) + 's';

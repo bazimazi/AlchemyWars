@@ -1,3 +1,5 @@
+import { normalizeTalents } from './talents.js';
+import { normalizeExperimentNotes } from './notebook.js';
 import { experimentContext, TUTORIAL_STEPS, utcDay } from './learning.js';
 import { abilitySlots, hasResearch } from './research.js';
 import { validAbilities } from '../data/units.js';
@@ -7,7 +9,7 @@ export type SaveStorage = Pick<Storage, 'getItem' | 'setItem'>;
 import { normalizeReplay } from './replay.js';
 import { REACTION_BY_ID, VESSEL_BY_ID, RESEARCH, ENCOUNTER_BY_ID, ENEMY_BY_ID, ELEMENT_BY_ID, REACTIONS } from '../data/content.js';
 import { createPlayer, unlockedRelics } from './progression.js';
-import { TALENTS, EQUIPMENT, SPECIALIZATIONS, QUESTS, ACHIEVEMENTS, PASSIVES, COSMETICS } from '../data/systems.js';
+import { EQUIPMENT, SPECIALIZATIONS, QUESTS, ACHIEVEMENTS, PASSIVES, COSMETICS } from '../data/systems.js';
 import { normalizeRun } from './modes.js';
 import { normalizeTestedBuilds, FORMATION_LIMIT } from './formations.js';
 
@@ -25,8 +27,9 @@ export function normalizeSave(value: unknown): Player {
   player.createdAt = integer(raw.createdAt, player.createdAt, Number.MAX_SAFE_INTEGER);
   player.activeDays = list(raw.activeDays, day => /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(Date.parse(day)), 366);
   player.run = normalizeRun(raw.run);
+  player.talents = normalizeTalents(raw.talents);
   for (const key of ['essence', 'shards', 'runsWon', 'endlessBest', 'highestChain'] as const) player[key] = integer(raw[key]);
-  for (const [key, definitions] of [['talents', TALENTS], ['equipment', EQUIPMENT], ['quests', QUESTS], ['achievements', ACHIEVEMENTS], ['cosmetics', COSMETICS]] as const) player[key] = list(raw[key], id => definitions.some(d => d.id === id));
+  for (const [key, definitions] of [['equipment', EQUIPMENT], ['quests', QUESTS], ['achievements', ACHIEVEMENTS], ['cosmetics', COSMETICS]] as const) player[key] = list(raw[key], id => definitions.some(d => d.id === id));
   if (!player.cosmetics.includes('observatory')) player.cosmetics.unshift('observatory');
   player.achievementClaims = list(raw.achievementClaims, id => player.achievements.includes(id));
   player.theme = player.cosmetics.includes(raw.theme) ? raw.theme : 'observatory';
@@ -52,7 +55,8 @@ export function normalizeSave(value: unknown): Player {
   player.favorites = list(raw.favorites, id => player.owned.includes(id));
   player.mastery = record(raw.mastery, id => player.owned.includes(id));
   player.claimedBattles = list(raw.claimedBattles, id => id.length < 100);
-  player.hints = record(raw.hints, id => Boolean(REACTION_BY_ID[id]));
+  player.hints = Object.fromEntries(Object.entries(record(raw.hints, id => Object.hasOwn(REACTION_BY_ID, id))).map(([id, n]) => [id, Math.min(4, n)]));
+  player.experimentNotes = normalizeExperimentNotes(player, raw.experimentNotes);
   for (const key of Object.keys(player.settings) as (keyof Player["settings"])[]) if (typeof raw.settings?.[key] === 'boolean') player.settings[key] = raw.settings[key];
   if (Array.isArray(raw.history)) player.history = raw.history.filter(h => h && Array.isArray(h.inputs) && h.inputs.length === 2 && h.inputs.every(id => player.owned.includes(id)) && (h.result === null || REACTION_BY_ID[h.result])).slice(0, 12).map(h => ({ inputs: [...h.inputs], result: h.result, environment: ['rain', 'storm', 'holy', 'night'].includes(h.environment) ? h.environment : 'neutral', frozen: h.frozen === true, ...(h.context ? { context: experimentContext(h.context) } : {}) }));
   const allowedRelics = new Set(unlockedRelics(player).map(r => r.id));

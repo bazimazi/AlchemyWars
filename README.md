@@ -28,7 +28,8 @@ The Assembly screen creates a separate server-backed account. Local journals rem
 - Configurable reaction priorities with alternate-recipe fallback, capped vessel growth and individual vessel animation profiles.
 - Observatory objectives, claimable rewards, daily questions and quick battle reports.
 - Managed formation libraries, persistent battle-tested build counts, six additional discovery/combat achievements, visible achievement progress and attributable Poison guardian victories.
-- Mastery, research, talents, equipment, relics, evolution, specialization, quests, achievements and cosmetic themes.
+- Eighteen permanent talents across six prerequisite branches, prepared experiment slots, expedition clues and rewards, research/crafting perks and reaction-triggered shields.
+- Mastery, research, equipment, relics, evolution, specialization, quests, achievements and cosmetic themes.
 - Eight-floor roguelite, endless dungeon, changing Infinite Alchemy, daily drafts, procedural boss variants, daily trials, weekly guardians and seasonal festival battles.
 - Temporary run relic/passive drafts, saved conditional experiments, targeting/reaction priorities, guaranteed recovery choices and changing endless floor rules.
 - Account persistence, normalized asynchronous PvP, drafted PvP, Element Wars, Weekly Crucible, friends, guild missions, elemental exchange, collaborative experiments, raids, guild competition, shared discoveries and player-authored experiment challenges.

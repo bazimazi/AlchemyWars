@@ -1,3 +1,4 @@
+import { saveExperimentNote, replaceExperimentNote, deleteExperimentNote } from './notebook.js';
 import { claimDailyGoal, markTutorial, contextFromConditions } from './learning.js';
 import type { Player, CommandPayload } from '../types.js';
 import { experiment, requestHint, updateLoadout, moveVessel, buyResearch } from './progression.js';
@@ -32,6 +33,9 @@ export function executeCommand(player: Player, command: string, value: unknown =
       if (!payload.key || !Object.hasOwn(player.settings, payload.key) || typeof payload.value !== 'boolean') return false;
       player.settings[payload.key] = payload.value; return true;
     case 'experiment': return experiment(player, (payload.a ?? ''), (payload.b ?? ''), payload.context, now);
+    case 'save-note': return saveExperimentNote(player, payload.name, payload.a, payload.b, payload.context);
+    case 'replace-note': return replaceExperimentNote(player, payload.index, payload.a, payload.b, payload.context);
+    case 'delete-note': return deleteExperimentNote(player, payload.index);
     case 'hint': return requestHint(player);
     case 'loadout': return updateLoadout(player, (payload.index ?? -1), (payload.patch ?? {}));
     case 'move': return moveVessel(player, (payload.index ?? -1), (payload.direction ?? 0));

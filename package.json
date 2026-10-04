@@ -1,6 +1,6 @@
 {
   "name": "alchemy-wars",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "description": "A discovery-first alchemy auto-battler with deterministic combat, campaign, roguelite and an authoritative shared world.",

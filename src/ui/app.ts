@@ -1,3 +1,4 @@
+import { renderExperimentNotebook, renderClueJournal } from './notebook-ui.js';
 import { renderStoryScene } from './story-ui.js';
 import { renderGuardianNotes, renderUnitInspector, renderContributionReport, renderGuardianReport } from './guardian-ui.js';
 import { renderResearchTree } from './research-ui.js';
@@ -10,12 +11,12 @@ import { renderCodexSection, relationshipLabel } from './codex-expansion.js';
 import type { WorldView, SocialPayload } from '../../server/types.js';
 import type { SaveStorage } from '../core/save.js';
 import { query, errorMessage, escapeHtml } from './dom.js';
-import type { Player, ReactionDefinition, BattleConfig, BattleResult, ExperimentResult, HintResult, CommandPayload, CommandResult, Pair, ReactionContext } from '../types.js';
+import type { Player, ReactionDefinition, BattleConfig, BattleResult, ExperimentResult, HintResult, CommandPayload, CommandResult, Pair, ReactionContext, CampaignRewards } from '../types.js';
 import { track } from '../core/meta.js';
 import { challengeConfig, settleChallengeBattle } from '../core/challenges.js';
 import { ELEMENT_BY_ID, REACTIONS, REACTION_BY_ID, VESSEL_BY_ID, RELICS, ENCOUNTERS, ENCOUNTER_BY_ID, STATUSES, BALANCE, CONTENT_VERSION } from '../data/content.js';
 import { reactionEngine } from '../core/reactions.js';
-import { encounterUnlocked, claimBattle, playerLevel, masteryLevel, unlockedRelics } from '../core/progression.js';
+import { encounterUnlocked, claimBattle, hintCost, playerLevel, masteryLevel, unlockedRelics } from '../core/progression.js';
 import { loadPlayer, savePlayer, parseSave, exportSave } from '../core/save.js';
 import { simulateBattle, makeBattleConfig } from '../core/combat.js';
 import { icon, sigil, creature, landscape } from './art.js';
@@ -48,7 +49,7 @@ interface UIState {
   page: string; slots: (string | null)[]; active: number; query: string; filter: string; codexTab: string;
   result: ExperimentResult | null; hint: string; environment: string; frozen: boolean; context: ReactionContext; encounter: string;
   battle: BattleResult | null; frame: number; playing: boolean; launching: boolean; speed: number; rewarded: boolean; replay: boolean;
-  battleId: string; newDiscoveries: string[]; region: string; battleKind: string;
+  fieldClue?: string; campaignRewards?: CampaignRewards; battleId: string; newDiscoveries: string[]; region: string; battleKind: string;
   challenge?: WorldView['challenges'][number] & { available: string[]; steps: Pair[] };
 }
 const ui: UIState = {
@@ -144,8 +145,8 @@ function labContext() { return experimentContext({ ...ui.context, environment: u
 function renderLab() {
   return heading('EXPERIMENT. DISCOVER. UNDERSTAND.', 'The Alchemy Lab', 'Great discoveries begin with a simple question: what happens if…', '<a class="quiet-link" href="#codex">' + icon('book') + ' Open codex ' + icon('arrow') + '</a>')
     + '<div class="lab-layout"><section class="panel experiment-panel"><div class="panel-top"><span>EXPERIMENT <b>№ ' + String(player.experiments + 1).padStart(3, '0') + '</b></span><span class="live-label"><i></i> Ready for a little wonder</span></div><div id="lab-stage">' + renderLabStage() + '</div><div class="lab-context"><label>Atmosphere <select id="environment" aria-label="Experiment atmosphere">' + [['neutral', 'Still air'], ['rain', 'Rain'], ['storm', 'Storm'], ['holy', 'Holy ground'], ['night', 'Night']].map(([id, name]) => '<option value="' + id + '" ' + (ui.environment === id ? 'selected' : '') + '>' + name + '</option>').join('') + '</select></label><label class="check-label"><input id="frozen" type="checkbox" ' + (ui.frozen ? 'checked' : '') + '> Frozen target</label><span>Experiments are always free</span></div>' + renderLabConditions(player, labContext()) + '</section><aside class="panel field-notes"><div class="eyebrow">' + icon('book') + ' FIELD NOTES</div><h2>Follow your<br><em>curiosity.</em></h2><p>Elements are only the beginning. Discover the relationships between them.</p><ol class="objective-list"><li class="' + (player.discoveries.length ? 'done' : '') + '"><span>' + (player.discoveries.length ? '✓' : '1') + '</span>Discover your first reaction</li><li class="' + (player.team.some(s => s.elements.some(id => !ELEMENT_BY_ID[id].base)) ? 'done' : '') + '"><span>2</span>Bind it to a vessel</li><li class="' + (player.wins ? 'done' : '') + '"><span>3</span>See your theory in battle</li></ol><div class="notes-bottom"><div><span>YOUR DISCOVERY JOURNAL</span><b>' + player.discoveries.length + '<small> / ' + REACTIONS.length + '</small></b></div><div class="meter"><i style="width:' + player.discoveries.length / REACTIONS.length * 100 + '%"></i></div></div></aside></div>'
-    + '<datalist id="element-names">' + player.owned.map(id => '<option value="' + escape(ELEMENT_BY_ID[id].name) + '"></option>').join('') + '</datalist>' + renderKnownRecipes(player)
-    + '<section class="collection-section"><div class="section-heading"><div><h2>Your elements <span class="count">' + player.owned.length + '</span></h2><p>Choose an element to place in the highlighted circle.</p></div><label class="search">' + icon('search') + '<input id="element-search" type="search" list="element-names" placeholder="Find an element…" aria-label="Search elements" value="' + escape(ui.query) + '"></label></div><div class="collection-toolbar"><div class="tabs" aria-label="Element filters">' + ['all', 'base', 'derived', 'favorites'].map(filter => button(({ all: 'All elements', base: 'Primordial', derived: 'Discovered', favorites: 'Favorites' }[filter] ?? filter), 'filter', 'tab ' + (ui.filter === filter ? 'selected' : ''), 'data-value="' + filter + '" aria-pressed="' + (ui.filter === filter) + '"')).join('') + '</div>' + button(icon('research') + ' A little inspiration <span>2 ✦</span>', 'hint', 'hint-button') + '</div><div id="hint-area" class="hint-area" ' + (!ui.hint ? 'hidden' : '') + '>' + escape(ui.hint) + '</div><div id="inventory" class="element-grid">' + renderInventory() + '</div></section>'
+    + '<datalist id="element-names">' + player.owned.map(id => '<option value="' + escape(ELEMENT_BY_ID[id].name) + '"></option>').join('') + '</datalist>' + renderKnownRecipes(player) + renderExperimentNotebook(player) + renderClueJournal(player)
+    + '<section class="collection-section"><div class="section-heading"><div><h2>Your elements <span class="count">' + player.owned.length + '</span></h2><p>Choose an element to place in the highlighted circle.</p></div><label class="search">' + icon('search') + '<input id="element-search" type="search" list="element-names" placeholder="Find an element…" aria-label="Search elements" value="' + escape(ui.query) + '"></label></div><div class="collection-toolbar"><div class="tabs" aria-label="Element filters">' + ['all', 'base', 'derived', 'favorites'].map(filter => button(({ all: 'All elements', base: 'Primordial', derived: 'Discovered', favorites: 'Favorites' }[filter] ?? filter), 'filter', 'tab ' + (ui.filter === filter ? 'selected' : ''), 'data-value="' + filter + '" aria-pressed="' + (ui.filter === filter) + '"')).join('') + '</div>' + button(icon('research') + ' A little inspiration <span>' + hintCost(player) + ' ✦</span>', 'hint', 'hint-button') + '</div><div id="hint-area" class="hint-area" ' + (!ui.hint ? 'hidden' : '') + '>' + escape(ui.hint) + '</div><div id="inventory" class="element-grid">' + renderInventory() + '</div></section>'
     + '<section class="recent-section"><div class="section-heading"><h2>On your workbench</h2><span class="subtle">Your recent experiments</span></div><div class="history-grid">' + (player.history.length ? player.history.slice(0, 4).map((entry, i) => '<button class="history-card" data-action="repeat" data-index="' + i + '"><div class="history-symbols">' + glyph(entry.inputs[0]) + '<span>+</span>' + glyph(entry.inputs[1]) + '<span>→</span>' + (entry.result ? glyph(entry.result) : '<span class="unknown-glyph">?</span>') + '</div><strong>' + (entry.result ? elementName(entry.result) : 'An unanswered question') + '</strong><small>' + entry.inputs.map(elementName).join(' + ') + '</small></button>').join('') : '<div class="empty-workbench">' + icon('lab') + '<div><strong>A fresh page in your journal.</strong><p>Your experiments will appear here. Start with fire and water.</p></div></div>') + '</div></section>';
 }
 function renderLabStage() {
@@ -220,9 +221,11 @@ function renderReport() {
   const encounter = battle.config.encounter ?? ENCOUNTER_BY_ID[battle.config.encounterId];
   const reactions = Object.entries(battle.report.reactions).sort((a, b) => b[1] - a[1]);
   const valuable = Object.entries(battle.report.damageByReaction ?? {}).sort((a, b) => b[1] - a[1])[0];
+  const earned = ui.campaignRewards ?? encounter;
   const damage = Object.entries(battle.report.damageByElement).sort((a, b) => b[1] - a[1]).slice(0, 5);
   return '<section class="panel report"><div class="report-heading"><span class="report-emblem">' + icon(victory ? 'star' : 'shield') + '</span><div><div class="eyebrow">' + (ui.replay ? 'REPLAY COMPLETE · NO REWARDS' : 'EXPEDITION COMPLETE') + '</div><h2>' + (victory ? 'A theory, proven.' : battle.outcome === 'draw' ? 'A question left open.' : 'Every experiment teaches us.') + '</h2><p>' + (victory ? 'Victory in ' : battle.outcome === 'draw' ? 'Time limit reached after ' : 'Defeated after ') + battle.duration.toFixed(1) + ' seconds · ' + battle.report.highestChain + '-step longest reaction chain</p></div></div>'
-    + (victory && !ui.replay && ['campaign', 'daily', 'weekly', 'festival'].includes(ui.battleKind) ? '<div class="earned-rewards"><span>+' + encounter.gold + ' gold</span><span>+' + encounter.knowledge + ' knowledge</span><span>+' + encounter.xp + ' XP</span></div>' : '')
+    + (victory && !ui.replay && ['campaign', 'daily', 'weekly', 'festival'].includes(ui.battleKind) ? '<div class="earned-rewards"><span>+' + earned.gold + ' gold</span><span>+' + earned.knowledge + ' knowledge</span><span>+' + earned.xp + ' XP</span>' + (ui.campaignRewards ? '<span>+' + ui.campaignRewards.essence + ' essence</span><span>+' + ui.campaignRewards.shards + ' shards</span>' : '') + '</div>' : '')
+    + (ui.fieldClue && !ui.replay ? '<p class="note field-clue-reward"><strong>A field clue uncovered:</strong> ' + escape(ui.fieldClue) + ' <a href="#lab">Read your laboratory clues</a></p>' : '')
     + '<div class="two-column"><div><h3>Your elemental contribution</h3>' + damage.map(([id, amount]) => '<div class="damage-stat"><span>' + elementName(id) + '</span><div class="meter"><i style="width:' + amount / battle.report.totalDamage * 100 + '%;background:' + ELEMENT_BY_ID[id].color + '"></i></div><b>' + Math.round(amount / battle.report.totalDamage * 100) + '%</b></div>').join('') + '</div><div><h3>Relationships in action</h3><div class="reaction-tags">' + (reactions.length ? reactions.map(([id, count]) => '<button data-action="detail" data-id="' + id + '">' + REACTION_BY_ID[id].name + '<b>×' + count + '</b></button>').join('') : '<p>No reactions occurred. Try complementary elements across your team.</p>') + '</div></div></div><p class="learning-note">' + icon('research') + (reactions.length ? 'Your most frequent reaction was ' + REACTION_BY_ID[reactions[0][0]].name + '. Try using its derived element as a core, then experiment with a new secondary.' : 'Water prepares enemies for lightning. Try a Tide Sylph with Water and Lightning.') + '</p>'
     + (valuable ? '<p class="note">Highest damaging reaction: ' + REACTION_BY_ID[valuable[0]].name + ' · ' + Math.round(valuable[1]) + ' damage, including lingering effects.</p>' : '')
     + (ui.newDiscoveries.length && !ui.replay ? '<p class="discovery-report">✦ Added to your codex: ' + ui.newDiscoveries.map(elementName).join(', ') + '.</p>' : '')
@@ -296,7 +299,7 @@ async function startBattle(replayConfig: BattleConfig | null = null, kind = repl
     if (kind === 'campaign' && !encounterUnlocked(player, ui.encounter)) return;
     ui.battle = simulateBattle(config);
     if (!network.account && kind !== 'replay') track(player, 'battle_started', { kind });
-    ui.frame = 0; ui.playing = true; ui.rewarded = false; ui.replay = kind === 'replay'; ui.battleKind = kind; ui.newDiscoveries = [];
+    ui.frame = 0; ui.playing = true; ui.rewarded = false; ui.replay = kind === 'replay'; ui.battleKind = kind; ui.newDiscoveries = []; ui.fieldClue = undefined; ui.campaignRewards = undefined;
     ui.battleId = launch?.battleId ?? crypto.randomUUID();
     if (kind === 'campaign') ui.region = ENCOUNTER_BY_ID[config.encounterId].regionId ?? 'prologue';
     ui.page = 'battle'; location.hash = 'battle'; render();
@@ -307,11 +310,11 @@ async function finishBattle() {
   ui.playing = false;
   if (!ui.rewarded && !ui.replay) {
     if (network.account) {
-      try { const response = await api('battle/finish', { battleId: ui.battleId }); player = response.player; ui.newDiscoveries = response.result?.discoveries ?? []; }
+      try { const response = await api('battle/finish', { battleId: ui.battleId }); player = response.player; ui.newDiscoveries = response.result?.discoveries ?? []; ui.fieldClue = response.result?.clue; ui.campaignRewards = response.result?.rewards; }
       catch (error) { toast(errorMessage(error) + ' Reopen the expedition to retry the claim.'); render(); return; }
     } else if (ui.battleKind === 'run') completeRunBattle(player, ui.battle);
     else if (['daily', 'weekly', 'festival'].includes(ui.battleKind)) settleChallengeBattle(player, ui.battle, ui.battleId);
-    else { const reward = claimBattle(player, ui.battle, ui.battleId); ui.newDiscoveries = reward.discoveries; }
+    else { const reward = claimBattle(player, ui.battle, ui.battleId); ui.newDiscoveries = reward.discoveries; ui.fieldClue = reward.clue; ui.campaignRewards = reward.rewards; }
     player.lastReplay = structuredClone(ui.battle.config);
     ui.rewarded = true;
     persist();
@@ -352,6 +355,21 @@ document.addEventListener('click', async event => {
     case 'favorite': await command('favorite', { id }); query('#inventory').innerHTML = renderInventory(); break;
     case 'inspect-unit': if (ui.battle) openModal(renderUnitInspector(ui.battle.frames[ui.frame], id)); break;
     case 'detail': showDetail(id); break;
+    case 'save-note': case 'replace-note': case 'delete-note': {
+      const name = document.querySelector<HTMLInputElement>('#experiment-name')?.value;
+      const result = await command(action, { index: Number(index), name, a: ui.slots[0] ?? '', b: ui.slots[1] ?? '', context: labContext() });
+      toast(result ? 'Your prepared experiments have been updated.' : 'Choose two owned ingredients and a unique name. The notebook may be full.');
+      render();
+      (document.querySelector<HTMLElement>('[data-action="' + (action === 'delete-note' ? 'load-note' : action) + '"][data-index="' + index + '"]') ?? document.querySelector<HTMLElement>('#experiment-name'))?.focus({ preventScroll: true });
+      break;
+    }
+    case 'load-note': {
+      const note = player.experimentNotes[Number(index)];
+      if (!note) break;
+      ui.slots = [...note.inputs]; ui.context = experimentContext(note.context); ui.environment = ui.context.environment ?? 'neutral';
+      ui.frozen = [...(ui.context.statuses ?? [])].includes('freeze'); ui.result = null;
+      render(); query('.combine-button').focus(); break;
+    }
     case 'combine': {
       const result = await command('experiment', { a: ui.slots[0] ?? "", b: ui.slots[1] ?? "", context: labContext() });
       if (!result.ok) { toast(result.error); break; }
@@ -361,7 +379,7 @@ document.addEventListener('click', async event => {
     }
     case 'hint': {
       const hint = await command('hint');
-      if (hint.ok) { ui.hint = hint.text ?? ""; persist(); const area = query('#hint-area'); area.textContent = hint.text ?? ""; area.hidden = false; }
+      if (hint.ok) { ui.hint = hint.text ?? ""; persist(); const area = query('#hint-area'); area.textContent = hint.text ?? ""; area.hidden = false; const clues = document.querySelector('.clue-journal'); if (clues) clues.outerHTML = renderClueJournal(player); else query('.experiment-notebook').insertAdjacentHTML('afterend', renderClueJournal(player)); }
       else toast(hint.error);
       break;
     }
@@ -385,8 +403,8 @@ document.addEventListener('click', async event => {
     case 'move': await command('move', { index: Number(index), direction: Number(target.dataset.dir) }); render(); break;
     case 'campaign-region': ui.region = value; ui.encounter = ENCOUNTERS.find(e => (value === 'prologue' ? !e.regionId : e.regionId === value) && !player.campaign.includes(e.id) && encounterUnlocked(player, e.id))?.id ?? ENCOUNTERS.find(e => value === 'prologue' ? !e.regionId : e.regionId === value)!.id; render(); break;
     case 'encounter': if (encounterUnlocked(player, id)) { ui.encounter = id; render(); } break;
-    case 'research-branch': {
-      const branch = document.querySelectorAll<HTMLElement>('.research-branch')[Number(index)];
+    case 'research-branch': case 'talent-branch': {
+      const branch = document.querySelectorAll<HTMLElement>(action === 'talent-branch' ? '.talent-branch' : '.research-branch')[Number(index)];
       branch?.focus({ preventScroll: true }); branch?.scrollIntoView({ behavior: player.settings.reducedMotion ? 'instant' : 'smooth', block: 'start' }); break;
     }
     case 'quick-battle': {

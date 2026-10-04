@@ -15,6 +15,47 @@ import { guildWeek } from '../server/guilds.js';
 import { dailyGoals } from '../src/core/learning.js';
 import { formationKey } from '../src/core/formations.js';
 import { RESEARCH, ELEMENTS } from '../src/data/content.js';
+import { claimBattle } from '../src/core/progression.js';
+
+test('server enforces notebook capacity and persists sanitized notes and earned talents', async t => {
+  const { service, directory } = await fixture(t), account = await service.register('NotebookScholar', 'test-only-password-123');
+  await service.store.transaction(db => { db.users[0].player.knowledge = 1000; });
+  const note = { name: 'Rain question', a: 'fire', b: 'water', context: { environment: 'rain', statuses: ['freeze'], research: ['reaction-science'], mastery: { fire: 10 } } };
+  assert.equal((await service.command(account.token, 'save-note', note)).result, true);
+  assert.equal((await service.command(account.token, 'save-note', { ...note, name: 'Second question' })).result, false);
+  assert.equal((await service.command(account.token, 'talent', { id: 'parallel-notes' })).result, false);
+  for (const id of ['deep-binding', 'reaction-scholar', 'parallel-notes']) assert.equal((await service.command(account.token, 'talent', { id })).result, true);
+  assert.equal((await service.command(account.token, 'save-note', { ...note, name: 'Second question' })).result, true);
+  assert.equal((await service.command(account.token, 'replace-note', { index: '__proto__', a: 'earth', b: 'fire' })).result, false);
+  assert.equal((await service.command(account.token, 'replace-note', { index: 1, a: 'earth', b: 'fire', context: { shielded: true } })).result, true);
+  const reopened = await createService(directory), p = reopened.me(account.token).player!;
+  assert.equal(p.experimentNotes.length, 2); assert.deepEqual(p.experimentNotes[0].context, { environment: 'rain', statuses: ['freeze'], tags: [] });
+  assert.deepEqual(p.experimentNotes[1].inputs, ['earth', 'fire']); assert.equal(p.experiments, 0);
+  assert.equal((await reopened.command(account.token, 'delete-note', { index: 0 })).result, true);
+  assert.equal(reopened.me(account.token).player!.experimentNotes[0].name, 'Second question');
+});
+
+test('server settles talent first-clear rewards and clues once using the issued combat snapshot', async t => {
+  const { service, directory } = await fixture(t), account = await service.register('TalentExplorer', 'test-only-password-123');
+  await service.store.transaction(db => {
+    const p = db.users[0].player; p.knowledge = 1000;
+    p.team.forEach(s => { s.elements = ['light', 'shadow']; p.vesselXp[s.vessel] = 450; }); p.mastery.light = p.mastery.shadow = 300;
+  });
+  for (const id of ['field-alchemist', 'first-survey', 'guardian-bounty', 'careful-notes', 'field-clues', 'deep-binding', 'reaction-conduit', 'reactive-ward']) assert.equal((await service.command(account.token, 'talent', { id })).result, true);
+  const launch = await service.startBattle(account.token, { encounterId: ENCOUNTERS[0].id });
+  const battle = simulateBattle(launch.config), snapshot = structuredClone(service.me(account.token).player!);
+  assert.equal(battle.outcome, 'victory'); assert.ok(battle.events.some(e => e.name === 'Reactive Ward'));
+  const expected = claimBattle(snapshot, battle, launch.battleId);
+  const results = await Promise.all([service.finishBattle(account.token, launch.battleId), service.finishBattle(account.token, launch.battleId)]);
+  for (const response of results) { assert.deepEqual(response.result!.rewards, expected.rewards); assert.equal(response.result!.clue, expected.clue); }
+  const reopened = await createService(directory), p = reopened.me(account.token).player!;
+  assert.deepEqual([p.gold, p.knowledge, p.essence, p.shards], [snapshot.gold, snapshot.knowledge, snapshot.essence, snapshot.shards]); assert.deepEqual(p.hints, snapshot.hints); assert.equal(p.wins, 1);
+  await reopened.command(account.token, 'talent', { id: 'reaction-scholar' });
+  assert.deepEqual(simulateBattle(p.lastReplay!).report, battle.report);
+  const retry = await reopened.startBattle(account.token, { encounterId: ENCOUNTERS[0].id });
+  const second = await reopened.finishBattle(account.token, retry.battleId);
+  assert.equal(second.result!.rewards!.knowledge, ENCOUNTERS[0].knowledge); assert.equal(second.result!.clue, undefined);
+});
 
 test('server manages saved formations and counts the issued battle build exactly once', async t => {
   const { service, directory } = await fixture(t), account = await service.register('BuildScholar', 'test-only-password-123');

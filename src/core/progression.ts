@@ -2,10 +2,29 @@ import { hintText, experimentContext, recordExperimentLearning, markTutorial } f
 import { abilitySlots, hasResearch } from './research.js';
 import { validAbilities } from '../data/units.js';
 import { recordBattleCodex } from './codex.js';
-import type { Player, ReactionDefinition, ReactionContext, BattleResult, Loadout } from '../types.js';
+import type { Player, ReactionDefinition, ReactionContext, BattleResult, Loadout, CampaignRewards } from '../types.js';
 import { BALANCE, ELEMENTS, ELEMENT_BY_ID, REACTION_BY_ID, VESSELS, VESSEL_BY_ID, RELICS, RELIC_BY_ID, RESEARCH, ENCOUNTERS, ENCOUNTER_BY_ID } from '../data/content.js';
 import { resolveExperiment, reactionEngine } from './reactions.js';
 import { metaDefaults, talentModifier, researchCost, refreshAchievements, track } from './meta.js';
+import { talentPerk } from './talents.js';
+import { seededRandom } from './combat.js';
+
+export const hintCost = (player: Player) => Math.max(1, BALANCE.hintCost - talentPerk(player, 'hintDiscount'));
+function accessibleHints(player: Player) {
+  return [...reactionEngine.byPair.values()].flat().filter(r => r.enabled !== false && !player.discoveries.includes(r.id) && r.inputs.every(id => player.owned.includes(id)) && hasResearch(player.research, r.conditions?.research));
+}
+export function uncoverFieldClue(player: Player, seed: number): string | undefined {
+  const chance = talentPerk(player, 'fieldClueChance');
+  if (!chance) return;
+  const random = seededRandom(seed ^ 0x4649454c);
+  if (random() >= chance) return;
+  const candidates = accessibleHints(player).filter(r => !player.hints[r.id]);
+  if (!candidates.length) return;
+  const rule = candidates[Math.floor(random() * candidates.length)];
+  player.hints[rule.id] = 1;
+  track(player, 'field_clue_found', { id: rule.id });
+  return hintText(rule, 1);
+}
 
 export function createPlayer(): Player {
   return {
@@ -59,11 +78,12 @@ export function experiment(player: Player, a: string, b: string, context: Reacti
 }
 
 export function requestHint(player: Player) {
-  const rule = [...reactionEngine.byPair.values()].flat().find(r => !player.discoveries.includes(r.id) && r.inputs.every(id => player.owned.includes(id)) && hasResearch(player.research, r.conditions?.research));
+  const rule = accessibleHints(player)[0];
   if (!rule) return { ok: false, error: 'Every accessible reaction is discovered. Explore your derived elements.' };
   if ((player.hints[rule.id] ?? 0) >= 4) return { ok: true, text: hintText(rule, 4) };
-  if (player.knowledge < BALANCE.hintCost) return { ok: false, error: 'You need 2 knowledge. Discover a reaction or win a battle.' };
-  player.knowledge -= BALANCE.hintCost;
+  const cost = hintCost(player);
+  if (player.knowledge < cost) return { ok: false, error: 'You need ' + cost + ' knowledge. Discover a reaction or win a battle.' };
+  player.knowledge -= cost;
   const stage = Math.min(4, (player.hints[rule.id] ?? 0) + 1);
   player.hints[rule.id] = stage;
   track(player, 'hint_used', { id: rule.id, stage });
@@ -99,6 +119,7 @@ export function buyResearch(player: Player, id: string) {
   if (!entry || player.research.includes(id) || player.knowledge < researchCost(player, entry) || entry.requires?.some(id => !player.research.includes(id))) return false;
   player.knowledge -= researchCost(player, entry);
   player.research.push(id);
+  player.essence += talentPerk(player, 'researchEssence');
   if (entry.unlockElement && !player.owned.includes(entry.unlockElement)) player.owned.push(entry.unlockElement);
   return true;
 }
@@ -129,21 +150,29 @@ export function claimBattle(player: Player, battle: BattleResult, battleId: stri
     player.mastery[rule.output] = (player.mastery[rule.output] ?? 0) + Math.min(5, uses);
   }
   for (const id of new Set(battle.config.team.flatMap(s => s.elements))) player.mastery[id] = (player.mastery[id] ?? 0) + BALANCE.battleMastery;
+  let clue: string | undefined;
+  let rewards: CampaignRewards | undefined;
   if (battle.outcome === 'victory') {
+    const firstClear = !player.campaign.includes(encounter.id);
+    rewards = { gold: encounter.gold, xp: encounter.xp,
+      knowledge: encounter.knowledge + (firstClear ? talentPerk(player, 'firstClearKnowledge') : 0),
+      essence: 5 + talentModifier(player, 'battleEssence'),
+      shards: 1 + talentModifier(player, 'battleShards') + (firstClear && encounter.boss ? talentPerk(player, 'firstBossClearShards') : 0) };
     player.wins++;
-    player.gold += encounter.gold;
-    player.knowledge += encounter.knowledge;
-    player.xp += encounter.xp;
-    player.essence += 5 + talentModifier(player, 'battleEssence');
-    player.shards += 1 + talentModifier(player, 'battleShards');
+    player.gold += rewards.gold;
+    player.knowledge += rewards.knowledge;
+    player.xp += rewards.xp;
+    player.essence += rewards.essence;
+    player.shards += rewards.shards;
     for (const id of Object.keys(battle.report.reactions)) player.reactionWins[id] = (player.reactionWins[id] ?? 0) + 1;
     if (encounter.boss) track(player, 'boss_defeated', { encounter: encounter.id });
     if (!player.campaign.includes(encounter.id)) player.campaign.push(encounter.id);
     if (encounter.unlockElement && !player.owned.includes(encounter.unlockElement)) player.owned.push(encounter.unlockElement);
+    if (firstClear) clue = uncoverFieldClue(player, battle.config.seed);
   }
   recordBattleCodex(player, battle);
   refreshAchievements(player);
-  return { claimed: true, discoveries };
+  return { claimed: true, discoveries, clue, rewards };
 }
 
 export function validateTeam(player: Player) {

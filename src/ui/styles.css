@@ -804,6 +804,18 @@ dialog h2 { font-size: 31px; margin-top: 10px; }
 .saved-formation ol { padding-left: 20px; line-height: 1.7; }
 .saved-formation .button { white-space: normal; min-height: 44px; }
 .saved-formation .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.talent-branch { margin: 24px 0; scroll-margin-top: 24px; }
+.talent-branch h3 { font: 26px Georgia, serif; margin: 0; }
+.talent-card h4 { font: 23px Georgia, serif; margin: 12px 0; }
+.talent-card .button { white-space: normal; min-height: 44px; }
+.experiment-notebook .form-row { align-items: end; flex-wrap: wrap; gap: 16px; }
+.experiment-notebook .form-row > label { flex: 1; min-width: 180px; }
+.notebook-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); gap: 16px; }
+.saved-experiment, .saved-clue { min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+.saved-experiment h3, .saved-clue h3 { margin-top: 0; overflow-wrap: anywhere; }
+.saved-experiment .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.saved-experiment .button { min-height: 44px; white-space: normal; }
+.clue-journal summary { cursor: pointer; }
 .discovery-reveal[data-grade=rare] .large-glyph { filter: drop-shadow(0 0 24px color-mix(in srgb, var(--element) 65%, transparent)); }
 .discovery-reveal[data-grade=exceptional] .large-glyph { filter: drop-shadow(0 0 35px color-mix(in srgb, var(--element) 80%, transparent)); }
 .discovery-reveal[data-grade=exceptional] .reveal-orbit { border: 1px solid color-mix(in srgb, var(--element) 40%, transparent); border-radius: 50%; }
