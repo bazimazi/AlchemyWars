@@ -16,6 +16,45 @@ import { dailyGoals } from '../src/core/learning.js';
 import { formationKey } from '../src/core/formations.js';
 import { RESEARCH, ELEMENTS } from '../src/data/content.js';
 import { claimBattle } from '../src/core/progression.js';
+import { TALENTS } from '../src/data/systems.js';
+import { STORM_CYCLE } from '../src/data/storm-catalysis.js';
+
+test('server records an issued ten-reaction chain once and persists its independent achievement claim', async t => {
+  const { service, directory } = await fixture(t), account = await service.register('ChainScholar', 'test-only-password-123');
+  await service.store.transaction(db => {
+    const p = db.users[0].player, target = ENCOUNTERS.find(e => e.id === 'stormlands-1')!;
+    p.research = RESEARCH.map(r => r.id); p.talents = TALENTS.map(t => t.id); p.discoveries = REACTIONS.filter(r => !STORM_CYCLE.includes(r.id)).map(r => r.id);
+    p.owned = ELEMENTS.map(e => e.id); p.mastery = { water: 90, lightning: 90 }; p.equipment = ['echo-catalyst'];
+    p.campaign = ENCOUNTERS.slice(0, ENCOUNTERS.indexOf(target)).map(e => e.id);
+    p.team.forEach(s => { s.elements = ['water', 'lightning']; s.relic = 'genesis-thread'; s.equipment = { catalyst: 'echo-catalyst' }; s.abilities = []; });
+  });
+  const launch = await service.startBattle(account.token, { encounterId: 'stormlands-1' }), battle = simulateBattle(launch.config);
+  assert.equal(battle.report.highestAllyChain, 10); assert.deepEqual(battle.report.longestAllyChain!.steps.map(s => s.reaction), STORM_CYCLE);
+  await Promise.all([service.finishBattle(account.token, launch.battleId), service.finishBattle(account.token, launch.battleId)]);
+  const reopened = await createService(directory), p = reopened.me(account.token).player!;
+  assert.equal(p.battles, 1); assert.equal(p.learning.longestChain, 10); assert.ok(p.achievements.includes('ten-reaction-chain'));
+  assert.deepEqual(simulateBattle(p.lastReplay!).report, battle.report);
+  const before = [p.gold, p.knowledge];
+  const claims = await Promise.all([reopened.command(account.token, 'achievement', { id: 'ten-reaction-chain' }), reopened.command(account.token, 'achievement', { id: 'ten-reaction-chain' })]);
+  assert.equal(claims.filter(c => c.result).length, 1); const current = reopened.me(account.token).player!;
+  assert.deepEqual([current.gold, current.knowledge], [before[0] + 200, before[1] + 25]);
+  await reopened.store.transaction(db => { db.users[0].player.chains = []; db.users[0].player.analytics = []; });
+  const restarted = (await createService(directory)).me(account.token).player!;
+  assert.deepEqual(restarted.chains, []); assert.deepEqual(restarted.analytics, []);
+  assert.ok(restarted.achievementClaims.includes('ten-reaction-chain')); assert.equal(restarted.learning.longestChain, 10);
+});
+
+test('online catalyst experiments reject forged research and mastery before accepting earned conditions', async t => {
+  const { service } = await fixture(t), account = await service.register('CatalystScholar', 'test-only-password-123');
+  await service.store.transaction(db => { const p = db.users[0].player; p.knowledge = 1000; p.discoveries = ['conductive']; p.owned.push('conductive'); });
+  const payload = { a: 'conductive', b: 'water', context: { environment: 'storm', statuses: ['wet'], research: ['storm-catalysis'], mastery: { water: 10, lightning: 10 } } };
+  const locked = await service.command(account.token, 'experiment', payload); assert.ok(locked.result && typeof locked.result === 'object' && 'rule' in locked.result); assert.equal(locked.result.rule, null);
+  for (const id of ['resonance', 'reaction-science', 'catalyst-study', 'storm-catalysis']) assert.equal((await service.command(account.token, 'research', { id })).result, true);
+  const novice = await service.command(account.token, 'experiment', payload); assert.ok(novice.result && typeof novice.result === 'object' && 'rule' in novice.result); assert.equal(novice.result.rule, null);
+  await service.store.transaction(db => { db.users[0].player.mastery.water = db.users[0].player.mastery.lightning = 90; });
+  const learned = await service.command(account.token, 'experiment', payload); assert.ok(learned.result && typeof learned.result === 'object' && 'rule' in learned.result); assert.equal(learned.result.rule?.id, 'flooded-current');
+  assert.equal(service.me(account.token).player!.learning.longestChain, 0);
+});
 
 test('server enforces notebook capacity and persists sanitized notes and earned talents', async t => {
   const { service, directory } = await fixture(t), account = await service.register('NotebookScholar', 'test-only-password-123');

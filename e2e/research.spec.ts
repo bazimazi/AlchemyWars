@@ -10,7 +10,7 @@ test('research prerequisites unlock alternate recipes and preserve purchases acr
   });
   await page.reload();
   await expect(page.locator('.research-branch')).toHaveCount(7);
-  await expect(page.locator('.research-card')).toHaveCount(19);
+  await expect(page.locator('.research-card')).toHaveCount(20);
   const pressure = page.locator('[data-research="reaction-science"]');
   await expect(pressure.getByRole('button')).toBeDisabled();
   await expect(pressure).toContainText('Chain Resonance');

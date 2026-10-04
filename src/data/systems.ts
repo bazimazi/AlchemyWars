@@ -76,6 +76,7 @@ export const ACHIEVEMENTS: Quest[] = [
   { ...meta, id: 'poison-boss', name: 'Defeat Boss With Poison', description: 'Defeat a guardian after your Poison status deals health damage to it.', criteria: { type: 'poison-boss-victories' }, target: 1, gold: 100, knowledge: 15 },
   { ...meta, id: 'five-legends', name: 'Five Legendary Reactions', description: 'Discover five different reactions of Legendary or Mythic rarity.', criteria: { type: 'legendary-discoveries' }, target: 5, gold: 150, knowledge: 20 },
   { ...meta, id: 'hundred-builds', name: 'A Hundred Different Builds', description: 'Test one hundred distinct five-vessel formations in settled battles. Names and account power do not count as build changes.', criteria: { type: 'tested-builds' }, target: 100, gold: 200, knowledge: 25 },
+  { ...meta, id: 'ten-reaction-chain', name: 'Ten Reaction Chain', description: 'Trigger ten successive reactions in one allied combat chain. Separate casts and enemy chains do not count.', criteria: { type: 'longest-chain' }, target: 10, gold: 200, knowledge: 25 },
 ];
 export const RUN_UPGRADES: { id: string; name: string; description: string; modifiers: Modifiers }[] = [
   { id: 'ward', name: 'Glass Aegis', description: 'Begin each battle with 100 shield.', modifiers: { startingShield: 100 } },

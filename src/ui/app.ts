@@ -1,3 +1,4 @@
+import { renderChainReport } from './chain-ui.js';
 import { renderExperimentNotebook, renderClueJournal } from './notebook-ui.js';
 import { renderStoryScene } from './story-ui.js';
 import { renderGuardianNotes, renderUnitInspector, renderContributionReport, renderGuardianReport } from './guardian-ui.js';
@@ -223,14 +224,14 @@ function renderReport() {
   const valuable = Object.entries(battle.report.damageByReaction ?? {}).sort((a, b) => b[1] - a[1])[0];
   const earned = ui.campaignRewards ?? encounter;
   const damage = Object.entries(battle.report.damageByElement).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  return '<section class="panel report"><div class="report-heading"><span class="report-emblem">' + icon(victory ? 'star' : 'shield') + '</span><div><div class="eyebrow">' + (ui.replay ? 'REPLAY COMPLETE · NO REWARDS' : 'EXPEDITION COMPLETE') + '</div><h2>' + (victory ? 'A theory, proven.' : battle.outcome === 'draw' ? 'A question left open.' : 'Every experiment teaches us.') + '</h2><p>' + (victory ? 'Victory in ' : battle.outcome === 'draw' ? 'Time limit reached after ' : 'Defeated after ') + battle.duration.toFixed(1) + ' seconds · ' + battle.report.highestChain + '-step longest reaction chain</p></div></div>'
+  return '<section class="panel report"><div class="report-heading"><span class="report-emblem">' + icon(victory ? 'star' : 'shield') + '</span><div><div class="eyebrow">' + (ui.replay ? 'REPLAY COMPLETE · NO REWARDS' : 'EXPEDITION COMPLETE') + '</div><h2>' + (victory ? 'A theory, proven.' : battle.outcome === 'draw' ? 'A question left open.' : 'Every experiment teaches us.') + '</h2><p>' + (victory ? 'Victory in ' : battle.outcome === 'draw' ? 'Time limit reached after ' : 'Defeated after ') + battle.duration.toFixed(1) + ' seconds · ' + battle.report.highestAllyChain + '-reaction longest allied chain</p></div></div>'
     + (victory && !ui.replay && ['campaign', 'daily', 'weekly', 'festival'].includes(ui.battleKind) ? '<div class="earned-rewards"><span>+' + earned.gold + ' gold</span><span>+' + earned.knowledge + ' knowledge</span><span>+' + earned.xp + ' XP</span>' + (ui.campaignRewards ? '<span>+' + ui.campaignRewards.essence + ' essence</span><span>+' + ui.campaignRewards.shards + ' shards</span>' : '') + '</div>' : '')
     + (ui.fieldClue && !ui.replay ? '<p class="note field-clue-reward"><strong>A field clue uncovered:</strong> ' + escape(ui.fieldClue) + ' <a href="#lab">Read your laboratory clues</a></p>' : '')
     + '<div class="two-column"><div><h3>Your elemental contribution</h3>' + damage.map(([id, amount]) => '<div class="damage-stat"><span>' + elementName(id) + '</span><div class="meter"><i style="width:' + amount / battle.report.totalDamage * 100 + '%;background:' + ELEMENT_BY_ID[id].color + '"></i></div><b>' + Math.round(amount / battle.report.totalDamage * 100) + '%</b></div>').join('') + '</div><div><h3>Relationships in action</h3><div class="reaction-tags">' + (reactions.length ? reactions.map(([id, count]) => '<button data-action="detail" data-id="' + id + '">' + REACTION_BY_ID[id].name + '<b>×' + count + '</b></button>').join('') : '<p>No reactions occurred. Try complementary elements across your team.</p>') + '</div></div></div><p class="learning-note">' + icon('research') + (reactions.length ? 'Your most frequent reaction was ' + REACTION_BY_ID[reactions[0][0]].name + '. Try using its derived element as a core, then experiment with a new secondary.' : 'Water prepares enemies for lightning. Try a Tide Sylph with Water and Lightning.') + '</p>'
     + (valuable ? '<p class="note">Highest damaging reaction: ' + REACTION_BY_ID[valuable[0]].name + ' · ' + Math.round(valuable[1]) + ' damage, including lingering effects.</p>' : '')
     + (ui.newDiscoveries.length && !ui.replay ? '<p class="discovery-report">✦ Added to your codex: ' + ui.newDiscoveries.map(elementName).join(', ') + '.</p>' : '')
     + (!ui.rewarded && !ui.replay ? '<p class="note">Rewards are awaiting server confirmation.</p>' + button('Retry reward claim', 'retry-claim', 'button primary') : '')
-    + renderContributionReport(battle) + renderGuardianReport(battle)
+    + renderContributionReport(battle) + renderGuardianReport(battle) + renderChainReport(player, battle)
     + (victory && ui.rewarded && !ui.replay && ui.battleKind === 'campaign' ? renderStoryScene(player, encounter, 'after') : '')
     + renderBattleLearning(player, battle, ui.rewarded && !ui.replay)
     + '<div class="report-actions">' + button('Continue exploring ' + icon('arrow'), 'leave-battle', 'button primary') + '<a href="#lab" class="button secondary">Back to the laboratory</a>' + button('Replay battle', 'replay-current', 'quiet-link') + '</div></section>';
@@ -383,8 +384,10 @@ document.addEventListener('click', async event => {
       else toast(hint.error);
       break;
     }
-    case 'prepare-recipe': {
-      const rule = REACTION_BY_ID[query<HTMLSelectElement>('#known-recipe').value];
+    case 'prepare-recipe': case 'prepare-chain-step': {
+      const rule = REACTION_BY_ID[action === 'prepare-chain-step' ? id : query<HTMLSelectElement>('#known-recipe').value];
+      if (!rule || !player.discoveries.includes(rule.id) || !rule.inputs.every(id => player.owned.includes(id))) break;
+      if (action === 'prepare-chain-step') { modal.close(); ui.playing = false; ui.page = 'lab'; history.pushState(null, '', '#lab'); }
       ui.slots = [...rule.inputs]; ui.context = contextFromConditions(rule.conditions); ui.environment = ui.context.environment ?? 'neutral'; ui.frozen = [...(ui.context.statuses ?? [])].includes('freeze'); ui.result = null; ui.hint = recipeRequirements(rule.id);
       render(); query('.combine-button').focus(); break;
     }

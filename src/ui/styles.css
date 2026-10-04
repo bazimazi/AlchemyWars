@@ -816,6 +816,18 @@ dialog h2 { font-size: 31px; margin-top: 10px; }
 .saved-experiment .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .saved-experiment .button { min-height: 44px; white-space: normal; }
 .clue-journal summary { cursor: pointer; }
+.chain-report { border-top: 1px solid var(--border); margin-top: 24px; padding-top: 18px; }
+.chain-codex { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+.recorded-chain { min-width: 0; }
+.recorded-chain > p { overflow-wrap: anywhere; }
+.chain-report summary, .recorded-chain summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.chain-steps { padding-left: 24px; }
+.chain-steps li { padding: 14px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.chain-steps li::marker { color: var(--gold); font-weight: 700; }
+.chain-steps li > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.chain-target { font-size: 12px; color: var(--muted); }
+.chain-steps p { margin: 8px 0; }
+.chain-steps .button { margin-top: 12px; min-height: 44px; white-space: normal; }
 .discovery-reveal[data-grade=rare] .large-glyph { filter: drop-shadow(0 0 24px color-mix(in srgb, var(--element) 65%, transparent)); }
 .discovery-reveal[data-grade=exceptional] .large-glyph { filter: drop-shadow(0 0 35px color-mix(in srgb, var(--element) 80%, transparent)); }
 .discovery-reveal[data-grade=exceptional] .reveal-orbit { border: 1px solid color-mix(in srgb, var(--element) 40%, transparent); border-radius: 50%; }

@@ -83,7 +83,6 @@ export function completeRunBattle(player: Player, battle: BattleResult) {
   run.health = battle.final.units.filter(u => u.side === 'ally').slice(0, 5).map(u => u.hp / u.maxHp);
   for (const id of Object.keys(battle.report.reactions)) if (!run.discoveries.includes(id) && REACTIONS.some(r => r.id === id)) { run.discoveries.push(id); const output = REACTIONS.find(r => r.id === id)!.output; if (!run.elements.includes(output)) run.elements.push(output); }
   recordBattleCodex(player, battle);
-  player.highestChain = Math.max(player.highestChain, battle.report.highestChain);
   if (battle.outcome !== 'victory') { run.state = 'defeat'; finalizeRun(player); return true; }
   run.wins++;
   if (['roguelite', 'draft'].includes(run.mode) && run.floor >= 8) { run.state = 'complete'; finalizeRun(player); }

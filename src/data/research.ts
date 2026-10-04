@@ -8,6 +8,7 @@ export const RESEARCH_UNLOCKS: Research[] = [
   { id: 'vessel-forms', branch: 'Creature Evolution', name: 'Living Vessels', icon: 'leaf', cost: 30, requires: ['cultivation'], modifiers: {}, description: 'Unlock Renewal Pulse, a healing and regeneration ability, and a wounded-target recovery recipe using Nature and Water.' },
   { id: 'catalyst-study', branch: 'Artifact Research', name: 'Catalyst Architecture', icon: 'shield', cost: 20, requires: ['resonance'], modifiers: {}, description: 'Unlock the Echo Catalyst crafting blueprint. Its vessel can sustain deeper reaction chains.' },
   { id: 'forgotten-formulas', branch: 'Ancient Knowledge', name: 'Forgotten Formulas', icon: 'moon', cost: 40, requires: ['reaction-science', 'element-void'], modifiers: {}, description: 'Recover a secret relationship between Shadow and Arcane. Requires Arcane mastery level two and at least two enemies.' },
+  { id: 'storm-catalysis', branch: 'Reaction Science', name: 'Storm Catalysis', icon: 'bolt', cost: 50, requires: ['reaction-science', 'catalyst-study'], modifiers: {}, description: 'Unlock nine atmospheric catalyst recipes. Water and Lightning mastery three, a Wet target and a storm let one reaction feed the next. A ten-step chain also needs sufficient chain depth.' },
 ];
 
 // Outputs reuse existing elemental identities. These recipes change behavior, not elemental stats.

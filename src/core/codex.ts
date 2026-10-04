@@ -11,6 +11,10 @@ export function relationshipCounts(player: Player, element: string) {
 export function highestBoss(player: Player) {
   return ENCOUNTERS.filter(e => e.boss && player.campaign.includes(e.id)).at(-1) ?? null;
 }
+export function maximalChains(chains: readonly DiscoveredChain[]) {
+  return chains.filter(chain => !chains.some(other => other.reactions.length > chain.reactions.length && chain.reactions.every((id, i) => other.reactions[i] === id)))
+    .sort((a, b) => b.reactions.length - a.reactions.length || a.firstSeen - b.firstSeen);
+}
 export function normalizeChains(value: unknown): DiscoveredChain[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
@@ -23,8 +27,10 @@ export function normalizeChains(value: unknown): DiscoveredChain[] {
 }
 export function recordBattleCodex(player: Player, battle: BattleResult, now = Date.now()) {
   recordBattleLearning(player, battle, now);
-  player.highestChain = Math.max(player.highestChain, battle.report.highestChain);
-  for (const path of battle.report.chains) if (!player.chains.some(c => c.reactions.join('|') === path.join('|'))) player.chains.push({ reactions: [...path], firstSeen: now });
+  player.highestChain = Math.max(player.highestChain, battle.report.highestAllyChain);
+  const longest = battle.report.longestAllyChain?.steps.map(step => step.reaction) ?? [];
+  const paths = longest.length > 1 ? [...battle.report.chains, longest] : battle.report.chains;
+  for (const path of paths) if (!player.chains.some(c => c.reactions.join('|') === path.join('|'))) player.chains.push({ reactions: [...path], firstSeen: now });
   player.chains = player.chains.slice(-200);
   for (const [id, observed] of Object.entries(battle.report.mechanics)) {
     if (!ENEMY_BY_ID[id]) continue;

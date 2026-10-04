@@ -138,7 +138,7 @@ export function claimBattle(player: Player, battle: BattleResult, battleId: stri
   player.claimedBattles.push(battleId);
   player.battles++;
   for (const slot of battle.config.team) player.vesselXp[slot.vessel] = Math.min(450, (player.vesselXp[slot.vessel] ?? 0) + (battle.outcome === 'victory' ? 10 : 3));
-  player.highestChain = Math.max(player.highestChain, battle.report.highestChain);
+  player.highestChain = Math.max(player.highestChain, battle.report.highestAllyChain);
   track(player, battle.outcome === 'victory' ? 'battle_won' : 'battle_lost', { encounter: encounter.id, duration: battle.duration });
   player.lastReplay = structuredClone(battle.config);
   const discoveries = [];

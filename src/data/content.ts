@@ -1,6 +1,7 @@
 import { validateUnitMechanics } from './unit-rules.js';
 import { validateTalentTree } from './talent-rules.js';
 import { TALENTS } from './systems.js';
+import { STORM_CATALYSIS_RECIPES } from './storm-catalysis.js';
 import { MOLTEN_KING } from './guardians.js';
 import { RESEARCH_UNLOCKS, RESEARCH_RECIPES } from './research.js';
 import { MYTHIC_REACTIONS, CONTINUATIONS } from './continuations.js';
@@ -12,7 +13,7 @@ const status = (id: string, duration: number, intensity = 1, extra: { recipient?
 const damage = (scale: number, extra: { recipient?: Effect["recipient"]; stacks?: number } = {}): Effect => ({ type: 'damage', scale, ...extra });
 const chain = (scale: number, count = 2): Effect => ({ type: 'chain', scale, count, status: 'shock', element: 'lightning' });
 
-export let CONTENT_VERSION = '0.10.0';
+export let CONTENT_VERSION = '0.11.0';
 export function setContentVersion(version: string) { CONTENT_VERSION = version; }
 export const BALANCE = {
   step: 0.25, maxTime: 90, maxChainDepth: 4, maxEventsPerAction: 80,
@@ -74,6 +75,7 @@ for (const [id, a, b, output, hint] of CONTINUATIONS) {
   REACTIONS.push({ ...meta, id, name: element.name + ' (' + id.replaceAll('-', ' ') + ')', inputs: [a, b], output, category: 'Continuation', color: element.color, icon: element.icon, tags: [...element.tags], hint, description: hint, rarity: 'Rare', priority: 0, cooldown: BALANCE.reactionCooldown, trigger: 'OnElementApplied', effects: structuredClone(element.effects) });
 }
 REACTIONS.push(...RESEARCH_RECIPES.map(r => ({ ...meta, output: r.id, rarity: 'Rare', priority: 12, cooldown: BALANCE.reactionCooldown, trigger: 'OnElementApplied', ...r })));
+REACTIONS.push(...STORM_CATALYSIS_RECIPES.map(r => ({ ...meta, output: r.id, rarity: 'Rare', priority: 14, cooldown: BALANCE.reactionCooldown, trigger: 'OnElementApplied', ...r })));
 export const REACTION_BY_ID: Record<string, ReactionDefinition> = Object.assign(Object.create(null), Object.fromEntries(REACTIONS.map(r => [r.id, r])));
 
 export const STATUSES: Record<string, StatusDefinition> = Object.fromEntries(([

@@ -6,7 +6,7 @@ import { formationKey, TESTED_BUILD_LIMIT } from './formations.js';
 export const utcDay = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
 export const TUTORIAL_STEPS = ['discovery', 'formation', 'battle', 'reflection', 'independent'] as const;
 export function learningDefaults(now = Date.now()): LearningProgress {
-  return { unassisted: [], freshWins: [], elementCasts: {}, elementWins: {}, tutorial: [], chainElements: 0, testedBuilds: [], firelessWins: 0, poisonBossWins: 0, daily: { day: utcDay(now), pairings: [], won: false, longestChain: 0, claims: [] } };
+  return { unassisted: [], freshWins: [], elementCasts: {}, elementWins: {}, tutorial: [], chainElements: 0, longestChain: 0, testedBuilds: [], firelessWins: 0, poisonBossWins: 0, daily: { day: utcDay(now), pairings: [], won: false, longestChain: 0, claims: [] } };
 }
 export function dailyGoals(now = Date.now()) {
   const day = Math.floor(now / 86400000), pool = ELEMENTS.filter(e => e.base && !e.unlockResearch);
@@ -49,7 +49,8 @@ export function recordBattleLearning(player: Player, battle: BattleResult, now =
     }
   }
   player.learning.chainElements = Math.max(player.learning.chainElements, ...battle.report.chains.map(path => new Set(path.flatMap(id => [...REACTION_BY_ID[id].inputs, REACTION_BY_ID[id].output])).size), 0);
-  daily.longestChain = Math.max(daily.longestChain, ...battle.report.chains.map(path => path.length), 0);
+  player.learning.longestChain = Math.max(player.learning.longestChain, battle.report.highestAllyChain);
+  daily.longestChain = Math.max(daily.longestChain, battle.report.highestAllyChain);
   if (battle.outcome === 'victory') for (const id of Object.keys(battle.report.reactions)) {
     if (Math.floor((player.discoveryDates[id] ?? -1) / 86400000) === Math.floor(now / 86400000) && !player.learning.freshWins.includes(id)) player.learning.freshWins.push(id);
   }
@@ -78,6 +79,7 @@ export function discoveryGoalProgress(player: Player, criteria: QuestCriteria) {
     case 'legendary-discoveries': return player.discoveries.filter(id => ['Legendary', 'Mythic'].includes(REACTION_BY_ID[id].rarity)).length;
     case 'fireless-victories': return player.learning.firelessWins;
     case 'poison-boss-victories': return player.learning.poisonBossWins;
+    case 'longest-chain': return player.learning.longestChain;
     case 'tested-builds': return player.learning.testedBuilds.length;
   }
 }

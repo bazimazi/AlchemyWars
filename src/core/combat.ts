@@ -68,7 +68,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
   const triggerPool = new ObjectPool<Partial<BattleEvent>>(() => ({}), value => { for (const key of Object.keys(value) as (keyof BattleEvent)[]) delete value[key]; });
   const triggerQueue: Partial<BattleEvent>[] = [];
   const triggerNames: Record<string, string> = { start: 'OnBattleStart', end: 'OnBattleEnd', cast: 'OnAbilityCast', critical: 'OnCritical', hit: 'OnHit', status: 'OnStatusApplied', expired: 'OnStatusExpired', damage: 'OnDamageTaken', death: 'OnDeath', kill: 'OnKill', element: 'OnElementApplied', reaction: 'OnReaction', reactionChain: 'OnReactionChain', lowHealth: 'OnLowHealth' };
-  const report: BattleReport = { units: {}, reactionSupport: {}, mechanics: {}, phases: [], statusDamage: {}, chains: [], elementCasts: {}, damageByElement: {}, damageByUnit: {}, damageByReaction: {}, reactions: {}, reactionDamage: 0, totalDamage: 0, healing: 0, highestChain: 0, decisions: 0, guardedEvents: 0 };
+  const report: BattleReport = { units: {}, reactionSupport: {}, mechanics: {}, phases: [], statusDamage: {}, chains: [], elementCasts: {}, damageByElement: {}, damageByUnit: {}, damageByReaction: {}, reactions: {}, reactionDamage: 0, totalDamage: 0, healing: 0, highestChain: 0, highestAllyChain: 0, longestAllyChain: null, decisions: 0, guardedEvents: 0 };
   const emit = (type: string, fields: Partial<BattleEvent> = {}) => {
     if (events.length < BALANCE.maxLogEvents) events.push({ time, type, ...fields });
     if (triggerNames[type]) triggerQueue.push(Object.assign(triggerPool.acquire(), { trigger: triggerNames[type], type }, fields));
@@ -295,14 +295,18 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
       for (const id of rule.inputs) delete victim.residues[id];
       victim.residues[rule.output] = time + BALANCE.residueDuration;
       const depth = context.depth + 1;
-      report.highestChain = Math.max(report.highestChain, depth);
+      const path = [...(context.path ?? []), rule.id];
+      report.highestChain = Math.max(report.highestChain, path.length);
       report.units[actor.id].reactions++;
       if (actor.side === 'ally') report.reactions[rule.id] = (report.reactions[rule.id] ?? 0) + 1;
-      emit('reaction', { source: actor.id, target: victim.id, id: rule.id, name: rule.name, element: rule.output, depth });
-      if (depth > 1) emit('reactionChain', { source: actor.id, target: victim.id, depth, element: rule.output });
-      const path = [...(context.path ?? []), rule.id];
+      emit('reaction', { source: actor.id, target: victim.id, id: rule.id, name: rule.name, element: rule.output, depth: path.length });
+      if (path.length > 1) emit('reactionChain', { source: actor.id, target: victim.id, depth: path.length, element: rule.output });
       if (actor.side === 'ally' && path.length > 1 && report.chains.length < 100 && !report.chains.some(p => p.join('|') === path.join('|'))) report.chains.push(path);
-      const next = { ...context, depth, path };
+      const trace = actor.side === 'ally' ? [...(context.trace ?? []), { reaction: rule.id, target: victim.id }] : undefined;
+      if (actor.side === 'ally' && path.length > report.highestAllyChain) {
+        report.highestAllyChain = path.length; report.longestAllyChain = { source: actor.id, time, steps: trace! };
+      }
+      const next = { ...context, depth, path, trace };
       applyEffects(rule.effects, actor, victim, rule.output, next, queue, rule.id);
       queue.push({ source: actor, target: victim, element: rule.output, context: next });
     }

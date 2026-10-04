@@ -1,13 +1,13 @@
 # Seeded balance report
 
-Content 0.10.0. 100 seeds per matchup. Starter has no upgrades; other profiles have mastery 3, all eighteen talents and all research, and no equipment or evolved elements. These simulations measure combat, not human playtime or device frame rate.
+Content 0.11.0. 100 seeds per matchup. Starter has no upgrades; other profiles have mastery 3, all research and talents, and no equipment or evolved elements. These simulations measure combat, not human playtime or device frame rate.
 
 ```json
 {
   "battles": 5600,
-  "elapsedSeconds": 30.49,
-  "medianSimulationMs": 5.15,
-  "p95SimulationMs": 8.7
+  "elapsedSeconds": 58.7,
+  "medianSimulationMs": 9.02,
+  "p95SimulationMs": 19.43
 }
 ```
 
@@ -27,7 +27,7 @@ Content 0.10.0. 100 seeds per matchup. Starter has no upgrades; other profiles h
 | Explorer | first-flame-12 | 100 | 0 | 31.1 | 35.5 | 5 |
 | Explorer | drowned-kingdom-12 | 100 | 0 | 25.5 | 61.1 | 5 |
 | Explorer | emerald-wild-12 | 100 | 0 | 23.5 | 47.1 | 5 |
-| Explorer | stormlands-12 | 100 | 0 | 47.7 | 52.7 | 4.1 |
+| Explorer | stormlands-12 | 100 | 0 | 47.3 | 38.6 | 5 |
 | Explorer | eclipse-12 | 100 | 0 | 33.8 | 44.6 | 5 |
 | Inferno | whispering-grove | 100 | 0 | 25.5 | 34.2 | 5 |
 | Inferno | drowned-ruins | 100 | 0 | 30 | 35.4 | 5 |
@@ -35,7 +35,7 @@ Content 0.10.0. 100 seeds per matchup. Starter has no upgrades; other profiles h
 | Inferno | first-flame-12 | 100 | 0 | 39.2 | 28.7 | 5 |
 | Inferno | drowned-kingdom-12 | 100 | 0 | 50.6 | 38.6 | 5 |
 | Inferno | emerald-wild-12 | 100 | 0 | 33.1 | 32.8 | 5 |
-| Inferno | stormlands-12 | 100 | 0 | 50.5 | 45.2 | 5 |
+| Inferno | stormlands-12 | 100 | 0 | 53.6 | 45.8 | 5 |
 | Inferno | eclipse-12 | 100 | 0 | 42.8 | 35.5 | 5 |
 | Storm | whispering-grove | 100 | 0 | 26.8 | 36.7 | 5 |
 | Storm | drowned-ruins | 100 | 0 | 11 | 80 | 5 |
@@ -43,7 +43,7 @@ Content 0.10.0. 100 seeds per matchup. Starter has no upgrades; other profiles h
 | Storm | first-flame-12 | 100 | 0 | 49.3 | 24.4 | 4 |
 | Storm | drowned-kingdom-12 | 100 | 0 | 28.8 | 54.8 | 5 |
 | Storm | emerald-wild-12 | 100 | 0 | 51.9 | 31.4 | 5 |
-| Storm | stormlands-12 | 0 | 8 | 70.9 | 36 | 0.1 |
+| Storm | stormlands-12 | 100 | 0 | 68.9 | 23.4 | 5 |
 | Storm | eclipse-12 | 0 | 0 | 77.3 | 32.7 | 0 |
 | Toxic Garden | whispering-grove | 100 | 0 | 37.3 | 15.6 | 5 |
 | Toxic Garden | drowned-ruins | 100 | 0 | 41.9 | 22.9 | 5 |
@@ -59,7 +59,7 @@ Content 0.10.0. 100 seeds per matchup. Starter has no upgrades; other profiles h
 | Frozen Fortress | first-flame-12 | 100 | 0 | 37.4 | 14.1 | 5 |
 | Frozen Fortress | drowned-kingdom-12 | 100 | 0 | 43.3 | 35.5 | 5 |
 | Frozen Fortress | emerald-wild-12 | 100 | 0 | 30.6 | 28.3 | 5 |
-| Frozen Fortress | stormlands-12 | 100 | 0 | 47.6 | 31.3 | 5 |
+| Frozen Fortress | stormlands-12 | 100 | 0 | 47.3 | 27.9 | 5 |
 | Frozen Fortress | eclipse-12 | 100 | 0 | 43.8 | 29.6 | 5 |
 | Eclipse | whispering-grove | 100 | 0 | 27.8 | 16.6 | 5 |
 | Eclipse | drowned-ruins | 100 | 0 | 31.7 | 13.2 | 5 |

@@ -38,7 +38,7 @@ test('artifacts cover every rarity with explicit synergies and reject invalid au
 
 test('chain diversity remains available to quests after older catalog paths are pruned', () => {
   const player = createPlayer(), battle = simulateBattle(makeBattleConfig(player, 'whispering-grove', 7));
-  battle.report.chains = [['thunderstorm', 'chain-lightning']]; recordBattleLearning(player, battle, day);
+  battle.report.chains = [['thunderstorm', 'chain-lightning']]; battle.report.highestAllyChain = 2; recordBattleLearning(player, battle, day);
   const diversity = discoveryGoalProgress(player, { type: 'chain-elements' }); player.chains = [];
   assert.ok(diversity >= 4); assert.equal(discoveryGoalProgress(normalizeSave(player), { type: 'chain-elements' }), diversity);
 });
@@ -85,11 +85,11 @@ test('learning counts actual elemental casts, ignores unused loadout elements an
 test('daily victory and chain goals use winning casts and ordered causal paths', () => {
   const player = createPlayer(), goal = dailyGoals(day);
   const battle = simulateBattle(makeBattleConfig(player, 'whispering-grove', 7));
-  battle.report.elementCasts = { [goal.victory]: 2 }; battle.report.chains = []; battle.report.highestChain = 8;
+  battle.report.elementCasts = { [goal.victory]: 2 }; battle.report.chains = []; battle.report.highestChain = 8; battle.report.highestAllyChain = 0;
   battle.outcome = 'defeat'; recordBattleLearning(player, battle, day);
   assert.equal(dailyGoalProgress(player, 'victory', day), 0);
   assert.equal(dailyGoalProgress(player, 'chain', day), 0);
-  battle.outcome = 'victory'; battle.report.chains = [['thunderstorm', 'chain-lightning']]; recordBattleLearning(player, battle, day);
+  battle.outcome = 'victory'; battle.report.chains = [['thunderstorm', 'chain-lightning']]; battle.report.highestAllyChain = 2; recordBattleLearning(player, battle, day);
   assert.equal(claimDailyGoal(player, 'victory', day), true);
   assert.equal(claimDailyGoal(player, 'chain', day), true);
   assert.equal(claimDailyGoal(player, 'chain', day), false);

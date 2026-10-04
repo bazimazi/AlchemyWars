@@ -7,7 +7,7 @@ import { normalizeChains } from './codex.js';
 import type { Player, Loadout } from '../types.js';
 export type SaveStorage = Pick<Storage, 'getItem' | 'setItem'>;
 import { normalizeReplay } from './replay.js';
-import { REACTION_BY_ID, VESSEL_BY_ID, RESEARCH, ENCOUNTER_BY_ID, ENEMY_BY_ID, ELEMENT_BY_ID, REACTIONS } from '../data/content.js';
+import { BALANCE, REACTION_BY_ID, VESSEL_BY_ID, RESEARCH, ENCOUNTER_BY_ID, ENEMY_BY_ID, ELEMENT_BY_ID, REACTIONS } from '../data/content.js';
 import { createPlayer, unlockedRelics } from './progression.js';
 import { EQUIPMENT, SPECIALIZATIONS, QUESTS, ACHIEVEMENTS, PASSIVES, COSMETICS } from '../data/systems.js';
 import { normalizeRun } from './modes.js';
@@ -101,6 +101,7 @@ export function normalizeSave(value: unknown): Player {
   player.learning.testedBuilds = normalizeTestedBuilds(learning?.testedBuilds);
   player.learning.firelessWins = integer(learning?.firelessWins);
   player.learning.poisonBossWins = integer(learning?.poisonBossWins);
+  player.learning.longestChain = integer(learning?.longestChain, Math.max(0, ...player.chains.map(c => c.reactions.length)), BALANCE.maxEventsPerAction);
   player.learning.chainElements = integer(learning?.chainElements, 0, Object.keys(ELEMENT_BY_ID).length);
   player.learning.tutorial = list(learning?.tutorial, id => (TUTORIAL_STEPS as readonly string[]).includes(id), 5);
   if (!learning) {

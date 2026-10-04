@@ -16,8 +16,8 @@ import { validatePack } from '../src/core/content-tools.js';
 
 test('all seven research branches have studies and tangible unlocks', () => {
   assert.deepEqual([...new Set(RESEARCH.map(r => r.branch))].sort(), [...RESEARCH_BRANCHES].sort());
-  assert.equal(RESEARCH.length, 19);
-  assert.equal(REACTIONS.filter(r => r.conditions?.research?.length).length, 4);
+  assert.equal(RESEARCH.length, 20);
+  assert.equal(REACTIONS.filter(r => r.conditions?.research?.length).length, 13);
   assert.ok(ABILITIES.some(a => a.requiresResearch?.length));
 });
 
