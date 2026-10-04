@@ -9,9 +9,9 @@ import type { WorldData, User, Guild, BattleClaim, Session, WorldView, BattleReq
 import type { BattleConfig } from '../src/types.js';
 import { MUTATORS, DISCOVERY_REWARDS } from '../src/data/systems.js';
 import { mergeModifiers } from '../src/core/modifiers.js';
-import { analyticsReport } from '../src/core/meta.js';
+import { analyticsReport, refreshAchievements } from '../src/core/meta.js';
 import { normalizeSave } from '../src/core/save.js';
-import { challengeConfig, claimChallenge } from '../src/core/challenges.js';
+import { challengeConfig, settleChallengeBattle } from '../src/core/challenges.js';
 import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual, createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 import { Store } from './store.js';
@@ -137,7 +137,7 @@ export async function createService(directory: string) {
         const battle = simulateBattle(pending.config, { captureFrames: false });
         let result: BattleClaim = { outcome: battle.outcome, discoveries: [], duration: battle.duration };
         if (pending.kind === 'campaign') result = { ...result, ...claimBattle(user.player, battle, battleId) };
-        if (['daily', 'weekly', 'festival'].includes(pending.kind)) result.claimed = claimChallenge(user.player, battle, pending.createdAt);
+        if (['daily', 'weekly', 'festival'].includes(pending.kind)) result.claimed = settleChallengeBattle(user.player, battle, battleId, pending.createdAt);
         if (pending.kind === 'run') completeRunBattle(user.player, battle);
         if (pending.kind === 'guild-war') {
           const guild = db.guilds.find(g => g.id === pending.guildId), current = rotation();
@@ -185,7 +185,8 @@ export async function createService(directory: string) {
         }
         const memberGuild = db.guilds.find(g => g.id === pending.guildId && g.id === user.guildId);
         if (memberGuild && battle.outcome === 'victory' && rotation(pending.createdAt).week === rotation().week) guildContribution(memberGuild, user, 'battles');
-        if (!['campaign', 'run'].includes(pending.kind) && !(['daily', 'weekly', 'festival'].includes(pending.kind) && result.claimed)) recordBattleCodex(user.player, battle);
+        if (!['campaign', 'run', 'daily', 'weekly', 'festival'].includes(pending.kind)) recordBattleCodex(user.player, battle);
+        refreshAchievements(user.player);
         user.player.lastReplay = structuredClone(pending.config);
         pending.claimed = true; pending.result = result;
         return { result, ...snapshot(user) };

@@ -12,7 +12,7 @@ import type { SaveStorage } from '../core/save.js';
 import { query, errorMessage, escapeHtml } from './dom.js';
 import type { Player, ReactionDefinition, BattleConfig, BattleResult, ExperimentResult, HintResult, CommandPayload, CommandResult, Pair, ReactionContext } from '../types.js';
 import { track } from '../core/meta.js';
-import { challengeConfig, claimChallenge } from '../core/challenges.js';
+import { challengeConfig, settleChallengeBattle } from '../core/challenges.js';
 import { ELEMENT_BY_ID, REACTIONS, REACTION_BY_ID, VESSEL_BY_ID, RELICS, ENCOUNTERS, ENCOUNTER_BY_ID, STATUSES, BALANCE, CONTENT_VERSION } from '../data/content.js';
 import { reactionEngine } from '../core/reactions.js';
 import { encounterUnlocked, claimBattle, playerLevel, masteryLevel, unlockedRelics } from '../core/progression.js';
@@ -310,7 +310,7 @@ async function finishBattle() {
       try { const response = await api('battle/finish', { battleId: ui.battleId }); player = response.player; ui.newDiscoveries = response.result?.discoveries ?? []; }
       catch (error) { toast(errorMessage(error) + ' Reopen the expedition to retry the claim.'); render(); return; }
     } else if (ui.battleKind === 'run') completeRunBattle(player, ui.battle);
-    else if (['daily', 'weekly', 'festival'].includes(ui.battleKind)) claimChallenge(player, ui.battle);
+    else if (['daily', 'weekly', 'festival'].includes(ui.battleKind)) settleChallengeBattle(player, ui.battle, ui.battleId);
     else { const reward = claimBattle(player, ui.battle, ui.battleId); ui.newDiscoveries = reward.discoveries; }
     player.lastReplay = structuredClone(ui.battle.config);
     ui.rewarded = true;

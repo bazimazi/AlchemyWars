@@ -66,7 +66,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
   const triggerPool = new ObjectPool<Partial<BattleEvent>>(() => ({}), value => { for (const key of Object.keys(value) as (keyof BattleEvent)[]) delete value[key]; });
   const triggerQueue: Partial<BattleEvent>[] = [];
   const triggerNames: Record<string, string> = { start: 'OnBattleStart', end: 'OnBattleEnd', cast: 'OnAbilityCast', critical: 'OnCritical', hit: 'OnHit', status: 'OnStatusApplied', expired: 'OnStatusExpired', damage: 'OnDamageTaken', death: 'OnDeath', kill: 'OnKill', element: 'OnElementApplied', reaction: 'OnReaction', reactionChain: 'OnReactionChain', lowHealth: 'OnLowHealth' };
-  const report: BattleReport = { units: {}, reactionSupport: {}, mechanics: {}, phases: [], chains: [], elementCasts: {}, damageByElement: {}, damageByUnit: {}, damageByReaction: {}, reactions: {}, reactionDamage: 0, totalDamage: 0, healing: 0, highestChain: 0, decisions: 0, guardedEvents: 0 };
+  const report: BattleReport = { units: {}, reactionSupport: {}, mechanics: {}, phases: [], statusDamage: {}, chains: [], elementCasts: {}, damageByElement: {}, damageByUnit: {}, damageByReaction: {}, reactions: {}, reactionDamage: 0, totalDamage: 0, healing: 0, highestChain: 0, decisions: 0, guardedEvents: 0 };
   const emit = (type: string, fields: Partial<BattleEvent> = {}) => {
     if (events.length < BALANCE.maxLogEvents) events.push({ time, type, ...fields });
     if (triggerNames[type]) triggerQueue.push(Object.assign(triggerPool.acquire(), { trigger: triggerNames[type], type }, fields));
@@ -130,7 +130,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
     emit('status', { source: source.id, target: target.id, status: id, stacks: target.statuses[id].stacks });
   }
 
-  function dealDamage(source: CombatUnit, target: CombatUnit | undefined, amount: number, element: string, reaction: boolean | string = false, reflected = false) {
+  function dealDamage(source: CombatUnit, target: CombatUnit | undefined, amount: number, element: string, reaction: boolean | string = false, reflected = false, status?: string) {
     if (!target || target.hp <= 0) return;
     let armor = target.armor * Math.max(0, 1 + modifier(target, 'armorMultiplier'));
     for (const weakness of target.definition.weaknesses ?? []) if (target.statuses[weakness.status]) { armor *= weakness.armorMultiplier; amount *= weakness.damageMultiplier ?? 1.25; }
@@ -150,13 +150,17 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
     target.hp -= dealt;
     report.units[source.id].damage += dealt; report.units[target.id].damageTaken += dealt; report.units[target.id].absorbed += absorbed;
     if (source.side === 'ally') {
+      if (status && target.side === 'enemy' && dealt > 0) {
+        const damage = report.statusDamage[target.id] ??= {};
+        damage[status] = (damage[status] ?? 0) + dealt;
+      }
       report.totalDamage += dealt;
       report.damageByElement[element] = (report.damageByElement[element] ?? 0) + dealt;
       report.damageByUnit[source.definitionId] = (report.damageByUnit[source.definitionId] ?? 0) + dealt;
       if (reaction) report.reactionDamage += dealt;
       if (typeof reaction === 'string') report.damageByReaction[reaction] = (report.damageByReaction[reaction] ?? 0) + dealt;
     }
-    emit('damage', { source: source.id, target: target.id, amount: dealt, absorbed, element, reaction });
+    emit('damage', { source: source.id, target: target.id, amount: dealt, absorbed, element, reaction, status });
     if (!reflected && dealt > 0) {
       const drain = modifier(source, 'lifesteal');
       if (drain > 0) heal(source, source, dealt * drain);
@@ -399,7 +403,7 @@ export function simulateBattle(config: BattleConfig, { captureFrames = true, eng
         if (tick % Math.round(BALANCE.statusTick / BALANCE.step) === 0 && STATUSES[s.id].periodic) {
           const source = units.find(u => u.id === s.source);
           if (!source) continue;
-          if (STATUSES[s.id].periodic === 'damage') dealDamage(source, unit, s.power * s.intensity * s.stacks, STATUS_AFFINITIES[s.id] ?? source.elements[0], s.reaction);
+          if (STATUSES[s.id].periodic === 'damage') dealDamage(source, unit, s.power * s.intensity * s.stacks, STATUS_AFFINITIES[s.id] ?? source.elements[0], s.reaction, false, s.id);
           else heal(source, unit, s.power * s.intensity * s.stacks, s.reaction);
         }
       }

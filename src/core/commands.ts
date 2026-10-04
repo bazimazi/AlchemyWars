@@ -1,7 +1,7 @@
 import { claimDailyGoal, markTutorial, contextFromConditions } from './learning.js';
 import type { Player, CommandPayload } from '../types.js';
 import { experiment, requestHint, updateLoadout, moveVessel, buyResearch } from './progression.js';
-import { learnTalent, craftEquipment, equipItem, evolveElement, specializeElement, claimQuest, claimAchievement, saveLoadout, applyLoadout, replaceVessel, equipPassive, buyCosmetic, track } from './meta.js';
+import { learnTalent, craftEquipment, equipItem, evolveElement, specializeElement, claimQuest, claimAchievement, saveLoadout, applyLoadout, renameLoadout, replaceLoadout, deleteLoadout, replaceVessel, equipPassive, buyCosmetic, track } from './meta.js';
 import { startRun, chooseRunReward, runExperiment, updateRunTeam, updateRunTactics, updateRunScenario, retireRun, claimDaily } from './modes.js';
 import { REACTION_BY_ID } from '../data/content.js';
 import { QUESTS, ACHIEVEMENTS, EQUIPMENT } from '../data/systems.js';
@@ -10,7 +10,7 @@ import { QUESTS, ACHIEVEMENTS, EQUIPMENT } from '../data/systems.js';
 export function executeCommand(player: Player, command: string, value: unknown = {}, { seed = 0, now = Date.now() } = {}) {
   const payload = value as CommandPayload;
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid command payload.');
-  if (['loadout', 'move', 'equip', 'apply-loadout', 'vessel', 'passive', 'run-reward', 'run-team', 'run-tactics'].includes(command) && (typeof (payload.index ?? -1) !== "number" || !Number.isInteger((payload.index ?? -1)) || (payload.index ?? -1) < 0 || (payload.index ?? -1) >= 10)) return false;
+  if (['loadout', 'move', 'equip', 'apply-loadout', 'rename-loadout', 'replace-loadout', 'delete-loadout', 'vessel', 'passive', 'run-reward', 'run-team', 'run-tactics'].includes(command) && (typeof (payload.index ?? -1) !== "number" || !Number.isInteger((payload.index ?? -1)) || (payload.index ?? -1) < 0 || (payload.index ?? -1) >= 10)) return false;
   switch (command) {
     case 'session': {
       const last = player.analytics.at(-1);
@@ -45,6 +45,9 @@ export function executeCommand(player: Player, command: string, value: unknown =
     case 'quest': return claimQuest(player, (payload.id ?? ''));
     case 'save-loadout': return saveLoadout(player, (payload.name ?? ''));
     case 'apply-loadout': return applyLoadout(player, (payload.index ?? -1));
+    case 'rename-loadout': return renameLoadout(player, payload.index ?? -1, payload.name);
+    case 'replace-loadout': return replaceLoadout(player, payload.index ?? -1);
+    case 'delete-loadout': return deleteLoadout(player, payload.index ?? -1);
     case 'vessel': return replaceVessel(player, (payload.index ?? -1), (payload.id ?? ''));
     case 'passive': return equipPassive(player, (payload.index ?? -1), (payload.id ?? ''));
     case 'cosmetic': return buyCosmetic(player, (payload.id ?? ''));

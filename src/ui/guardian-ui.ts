@@ -40,11 +40,13 @@ export function renderUnitInspector(frame: BattleFrame, id: string) {
 export function renderContributionReport(battle: BattleResult) {
   const allies = battle.final.units.filter(u => u.side === 'ally');
   const support = Object.entries(battle.report.reactionSupport).filter(([, s]) => s.healing || s.shield || s.cleanses || s.statuses);
+  const lingering = Object.entries(battle.report.statusDamage).flatMap(([id, damage]) => Object.entries(damage).map(([status, amount]) => '<p class="note">' + esc(STATUSES[status].name) + ' dealt ' + Math.round(amount) + ' health damage to ' + esc(battle.final.units.find(u => u.id === id)?.name ?? id) + '.</p>'));
   return '<section class="contribution-report"><h3>What each vessel contributed</h3><p>Effective healing excludes overheal. Granted shields and absorbed damage are shown separately; support can matter without dealing damage.</p><div class="table-scroll" role="region" aria-label="Vessel contributions" tabindex="0"><table><thead><tr><th scope="col">Vessel</th><th scope="col">Damage</th><th scope="col">Healing</th><th scope="col">Shield granted</th><th scope="col">Absorbed</th><th scope="col">Cleanses</th></tr></thead><tbody>' + allies.map(unit => {
     const s = battle.report.units[unit.id];
     return '<tr><th scope="row">' + esc(unit.name) + '</th><td>' + Math.round(s.damage) + '</td><td>' + Math.round(s.healing) + '</td><td>' + Math.round(s.shield) + '</td><td>' + Math.round(s.absorbed) + '</td><td>' + s.cleanses + '</td></tr>';
   }).join('') + '</tbody></table></div>'
     + '<p class="table-scroll-hint subtle">Scroll the table to compare all contributions.</p>'
+    + (lingering.length ? '<details class="status-damage-details"><summary>Lingering status damage</summary><p>Damage from your statuses after shields and armor, included in the vessel totals above.</p>' + lingering.join('') + '</details>' : '')
     + (support.length ? '<details class="support-details"><summary>Support from your reactions</summary><div class="reaction-support">' + support.map(([id, s]) => '<article class="note"><strong>' + esc(REACTION_BY_ID[id]?.name ?? id) + '</strong><p>' + [s.healing ? Math.round(s.healing) + ' healing' : '', s.shield ? Math.round(s.shield) + ' shield granted' : '', s.cleanses ? s.cleanses + ' effects cleansed' : '', s.statuses ? s.statuses + ' statuses applied' : ''].filter(Boolean).join(' · ') + '</p></article>').join('') + '</div></details>' : '') + '</section>';
 }
 

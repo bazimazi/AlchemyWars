@@ -1,0 +1,12 @@
+import type { Player } from '../types.js';
+import { ELEMENT_BY_ID, VESSEL_BY_ID } from '../data/content.js';
+import { FORMATION_LIMIT, TESTED_BUILD_LIMIT, validFormation } from '../core/formations.js';
+import { escapeHtml as esc } from './dom.js';
+
+const button = (label: string, action: string, index: number, disabled = false) => '<button class="button secondary" data-action="x-' + action + '" data-index="' + index + '"' + (disabled ? ' disabled' : '') + '>' + label + '</button>';
+export function renderFormationLibrary(player: Player) {
+  return '<section class="panel content-panel formation-library spaced-heading" aria-labelledby="formation-library-title"><div class="eyebrow">KEEP YOUR THEORIES</div><h2 id="formation-library-title">Formation library</h2><p>Keep up to ' + FORMATION_LIMIT + ' named formations, including vessel order, elements, relics, passives, equipment, abilities and reaction priorities.</p>'
+    + '<p class="subtle">' + player.loadouts.length + ' / ' + FORMATION_LIMIT + ' saved · ' + player.learning.testedBuilds.length + ' / ' + TESTED_BUILD_LIMIT + ' different builds tested in settled battles. Copies, names and account upgrades do not count as new builds.</p>'
+    + '<div class="form-row"><label>Save this formation<input id="loadout-name" maxlength="40" placeholder="Storm garden"></label><button class="button secondary" data-action="x-save-loadout"' + (player.loadouts.length >= FORMATION_LIMIT ? ' disabled' : '') + '>Save formation</button></div>'
+    + (player.loadouts.length ? '<div class="saved-formation-grid">' + player.loadouts.map((l, i) => '<article class="saved-formation" data-saved-formation="' + i + '"><h3>' + esc(l.name) + '</h3><details><summary>Five vessel choices</summary><ol>' + l.team.map(s => '<li><strong>' + esc(VESSEL_BY_ID[s.vessel].name) + '</strong>: ' + s.elements.map(id => esc(ELEMENT_BY_ID[id].name)).join(' + ') + '</li>').join('') + '</ol></details><div class="button-row">' + button('Load ' + esc(l.name), 'apply-loadout', i, !validFormation(player, l.team)) + '</div><label>Formation name<input id="formation-name-' + i + '" maxlength="40" value="' + esc(l.name) + '"></label><div class="button-row">' + button('Rename', 'rename-loadout', i) + button('Replace with current', 'replace-loadout', i) + button('Delete saved copy', 'delete-loadout', i) + '</div></article>').join('') + '</div>' : '<p class="subtle">Your first saved formation will appear here.</p>') + '</section>';
+}

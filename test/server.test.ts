@@ -13,6 +13,51 @@ import { competitionRules } from '../src/core/competition.js';
 import { REACTIONS, ENCOUNTERS } from '../src/data/content.js';
 import { guildWeek } from '../server/guilds.js';
 import { dailyGoals } from '../src/core/learning.js';
+import { formationKey } from '../src/core/formations.js';
+import { RESEARCH, ELEMENTS } from '../src/data/content.js';
+
+test('server manages saved formations and counts the issued battle build exactly once', async t => {
+  const { service, directory } = await fixture(t), account = await service.register('BuildScholar', 'test-only-password-123');
+  await service.store.transaction(db => {
+    const p = db.users[0].player; p.team.forEach(s => { s.elements = ['light', 'shadow']; p.vesselXp[s.vessel] = 450; });
+    p.mastery.light = 300; p.mastery.shadow = 300;
+  });
+  assert.equal((await service.command(account.token, 'save-loadout', { name: 'Night study' })).result, true);
+  const launch = await service.startBattle(account.token, { encounterId: 'whispering-grove' }), battle = simulateBattle(launch.config); assert.equal(battle.outcome, 'victory');
+  await service.command(account.token, 'loadout', { index: 0, patch: { elements: ['water', 'earth'] } });
+  await service.command(account.token, 'replace-loadout', { index: 0 });
+  await service.command(account.token, 'rename-loadout', { index: 0, name: 'River study' });
+  await Promise.all([service.finishBattle(account.token, launch.battleId), service.finishBattle(account.token, launch.battleId)]);
+  const p = service.me(account.token).player!;
+  assert.deepEqual(p.learning.testedBuilds, [formationKey(launch.config.team)]); assert.equal(p.learning.firelessWins, 1);
+  const gold = p.gold;
+  const rewards = await Promise.all([service.command(account.token, 'achievement', { id: 'win-without-fire' }), service.command(account.token, 'achievement', { id: 'win-without-fire' })]);
+  assert.equal(rewards.filter(r => r.result === true).length, 1); assert.equal(service.me(account.token).player!.gold, gold + 75);
+  const reopened = await createService(directory), restored = reopened.me(account.token).player!;
+  assert.deepEqual(restored.learning, service.me(account.token).player!.learning); assert.equal(restored.loadouts[0].name, 'River study');
+  assert.deepEqual(restored.loadouts[0].team[0].elements, ['water', 'earth']);
+  assert.equal((await reopened.command(account.token, 'delete-loadout', { index: '__proto__' })).result, false);
+  assert.equal((await reopened.command(account.token, 'delete-loadout', { index: 0 })).result, true);
+  assert.equal(reopened.me(account.token).player!.loadouts.length, 0); assert.equal(reopened.me(account.token).player!.learning.testedBuilds.length, 1);
+});
+
+test('authoritative guardian Poison progress survives concurrent claims and restart', async t => {
+  const { service, directory } = await fixture(t), account = await service.register('VenomScholar', 'test-only-password-123');
+  const target = ENCOUNTERS.find(e => e.enemies.includes('molten-king'))!;
+  await service.store.transaction(db => {
+    const p = db.users[0].player; p.campaign = ENCOUNTERS.slice(0, ENCOUNTERS.indexOf(target)).map(e => e.id);
+    p.discoveries = REACTIONS.map(r => r.id); p.owned = ELEMENTS.map(e => e.id);
+    p.mastery = Object.fromEntries(p.owned.map(id => [id, 300])); p.research = RESEARCH.map(r => r.id);
+    p.talents = ['deep-binding', 'reaction-scholar']; p.evolution.poison = 3;
+    p.team.forEach((s, i) => { s.elements = i === 0 ? ['poison', 'water'] : ['gravity', 'storm-surge']; p.vesselXp[s.vessel] = 450; });
+  });
+  const launch = await service.startBattle(account.token, { encounterId: target.id }), battle = simulateBattle(launch.config);
+  assert.equal(battle.outcome, 'victory'); assert.ok(battle.report.statusDamage['enemy-0'].poison > 0);
+  await Promise.all([service.finishBattle(account.token, launch.battleId), service.finishBattle(account.token, launch.battleId)]);
+  const restored = (await createService(directory)).me(account.token).player!;
+  assert.equal(restored.learning.poisonBossWins, 1); assert.ok(restored.achievements.includes('poison-boss'));
+  assert.equal(restored.learning.testedBuilds.length, 1); assert.deepEqual(simulateBattle(restored.lastReplay!).report, battle.report);
+});
 
 test('server persists drafted run tools and scenarios, blocks issued-battle edits and settles once', async t => {
   const { service, directory } = await fixture(t), account = await service.register('RunScholar', 'test-only-password-123');

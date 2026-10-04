@@ -57,6 +57,12 @@ export const ACHIEVEMENTS: Quest[] = [
   ...QUESTS.map(q => ({ ...q, id: 'achievement-' + q.id, gold: Math.max(10, Math.floor(q.gold / 2)), knowledge: Math.max(1, Math.floor(q.knowledge / 2)) })),
   { ...meta, id: 'master-alchemist', name: 'Master Alchemist', description: 'Discover fifty reactions.', metric: 'discoveries', target: 50, gold: 150, knowledge: 20 },
   { ...meta, id: 'depths', name: 'Into the Depths', description: 'Reach endless floor ten.', metric: 'endlessBest', target: 10, gold: 100, knowledge: 15 },
+  { ...meta, id: 'first-secret', name: 'First Secret', description: 'Discover a secret relationship.', criteria: { type: 'secret-discoveries' }, target: 1, gold: 100, knowledge: 12 },
+  { ...meta, id: 'century-of-discoveries', name: 'A Hundred Connections', description: 'Discover one hundred distinct reactions.', metric: 'discoveries', target: 100, gold: 200, knowledge: 25 },
+  { ...meta, id: 'win-without-fire', name: 'Win Without Fire', description: 'Win with Fire absent from your formation, casts, damage and triggered recipes.', criteria: { type: 'fireless-victories' }, target: 1, gold: 75, knowledge: 10 },
+  { ...meta, id: 'poison-boss', name: 'Defeat Boss With Poison', description: 'Defeat a guardian after your Poison status deals health damage to it.', criteria: { type: 'poison-boss-victories' }, target: 1, gold: 100, knowledge: 15 },
+  { ...meta, id: 'five-legends', name: 'Five Legendary Reactions', description: 'Discover five different reactions of Legendary or Mythic rarity.', criteria: { type: 'legendary-discoveries' }, target: 5, gold: 150, knowledge: 20 },
+  { ...meta, id: 'hundred-builds', name: 'A Hundred Different Builds', description: 'Test one hundred distinct five-vessel formations in settled battles. Names and account power do not count as build changes.', criteria: { type: 'tested-builds' }, target: 100, gold: 200, knowledge: 25 },
 ];
 export const RUN_UPGRADES: { id: string; name: string; description: string; modifiers: Modifiers }[] = [
   { id: 'ward', name: 'Glass Aegis', description: 'Begin each battle with 100 shield.', modifiers: { startingShield: 100 } },

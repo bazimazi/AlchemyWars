@@ -1,13 +1,13 @@
 # Seeded balance report
 
-Content 0.8.0. 100 seeds per matchup. Starter has no upgrades; other profiles have mastery 3, all research and talents, and no equipment or evolved elements. These simulations measure combat, not human playtime or device frame rate.
+Content 0.9.0. 100 seeds per matchup. Starter has no upgrades; other profiles have mastery 3, all research and talents, and no equipment or evolved elements. These simulations measure combat, not human playtime or device frame rate.
 
 ```json
 {
   "battles": 5600,
-  "elapsedSeconds": 26.89,
-  "medianSimulationMs": 4.69,
-  "p95SimulationMs": 6.89
+  "elapsedSeconds": 43.75,
+  "medianSimulationMs": 7.66,
+  "p95SimulationMs": 13.06
 }
 ```
 

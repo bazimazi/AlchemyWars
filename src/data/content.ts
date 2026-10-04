@@ -10,7 +10,7 @@ const status = (id: string, duration: number, intensity = 1, extra: { recipient?
 const damage = (scale: number, extra: { recipient?: Effect["recipient"]; stacks?: number } = {}): Effect => ({ type: 'damage', scale, ...extra });
 const chain = (scale: number, count = 2): Effect => ({ type: 'chain', scale, count, status: 'shock', element: 'lightning' });
 
-export let CONTENT_VERSION = '0.8.0';
+export let CONTENT_VERSION = '0.9.0';
 export function setContentVersion(version: string) { CONTENT_VERSION = version; }
 export const BALANCE = {
   step: 0.25, maxTime: 90, maxChainDepth: 4, maxEventsPerAction: 80,

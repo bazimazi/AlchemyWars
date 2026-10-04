@@ -27,6 +27,7 @@ The Assembly screen creates a separate server-backed account. Local journals rem
 - Nineteen studies across seven research branches, prerequisite-aware purchases, recipe/ability/blueprint unlocks and a third PvE ability slot (two in competitive battles).
 - Configurable reaction priorities with alternate-recipe fallback, capped vessel growth and individual vessel animation profiles.
 - Observatory objectives, claimable rewards, daily questions and quick battle reports.
+- Managed formation libraries, persistent battle-tested build counts, six additional discovery/combat achievements, visible achievement progress and attributable Poison guardian victories.
 - Mastery, research, talents, equipment, relics, evolution, specialization, quests, achievements and cosmetic themes.
 - Eight-floor roguelite, endless dungeon, changing Infinite Alchemy, daily drafts, procedural boss variants, daily trials, weekly guardians and seasonal festival battles.
 - Temporary run relic/passive drafts, saved conditional experiments, targeting/reaction priorities, guaranteed recovery choices and changing endless floor rules.
@@ -44,7 +45,7 @@ npm run balance -- 100 --report
 npm run balance:runs -- 20 --report
 ```
 
-`verify` compiles all source and tests with strict TypeScript, runs 262 engine/server tests, validates and builds `dist/`, then runs 52 desktop/mobile browser tests. TypeScript and Node typings provide strict checks; Playwright supplies isolated browser automation. The game and server have no runtime dependencies.
+`verify` compiles all source and tests with strict TypeScript, runs 284 engine/server tests, validates and builds `dist/`, then runs 60 desktop/mobile browser tests. TypeScript and Node typings provide strict checks; Playwright supplies isolated browser automation. The game and server have no runtime dependencies.
 
 `npm run balance -- 100 --all --report` includes every campaign stage. Generated findings are written to [docs/BALANCE.md](docs/BALANCE.md).
 

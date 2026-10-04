@@ -9,6 +9,7 @@ import { REACTION_BY_ID, VESSEL_BY_ID, RESEARCH, ENCOUNTER_BY_ID, ENEMY_BY_ID, E
 import { createPlayer, unlockedRelics } from './progression.js';
 import { TALENTS, EQUIPMENT, SPECIALIZATIONS, QUESTS, ACHIEVEMENTS, PASSIVES, COSMETICS } from '../data/systems.js';
 import { normalizeRun } from './modes.js';
+import { normalizeTestedBuilds, FORMATION_LIMIT } from './formations.js';
 
 export const SAVE_KEY = 'alchemy-wars.save.v1';
 export const BACKUP_KEY = SAVE_KEY + '.backup';
@@ -58,7 +59,7 @@ export function normalizeSave(value: unknown): Player {
   const used = new Set();
   const team: Loadout[] = [];
   if (Array.isArray(raw.team)) for (const slot of raw.team) {
-    if (!slot || !VESSEL_BY_ID[slot.vessel] || used.has(slot.vessel) || team.length >= 5) continue;
+    if (!slot || !Object.hasOwn(VESSEL_BY_ID, slot.vessel) || used.has(slot.vessel) || team.length >= 5) continue;
     used.add(slot.vessel);
     const fallback = VESSEL_BY_ID[slot.vessel];
     team.push({
@@ -75,7 +76,7 @@ export function normalizeSave(value: unknown): Player {
   }
   for (const slot of createPlayer().team) if (!used.has(slot.vessel) && team.length < 5) team.push(slot);
   player.team = team;
-  if (Array.isArray(raw.loadouts)) player.loadouts = raw.loadouts.filter(l => typeof l?.name === 'string' && Array.isArray(l.team) && l.team.length === 5 && new Set(l.team.map(s => s?.vessel)).size === 5 && l.team.every(s => s && VESSEL_BY_ID[s.vessel] && Array.isArray(s.elements) && s.elements.length === 2 && s.elements.every(id => player.owned.includes(id)))).slice(0, 10).map(l => ({ name: l.name.slice(0, 40), team: normalizeSave({ ...raw, team: l.team, loadouts: [], lastReplay: null }).team }));
+  if (Array.isArray(raw.loadouts)) player.loadouts = raw.loadouts.filter(l => typeof l?.name === 'string' && l.name.trim().length > 0 && Array.isArray(l.team) && l.team.length === 5 && new Set(l.team.map(s => s?.vessel)).size === 5 && l.team.every(s => s && Object.hasOwn(VESSEL_BY_ID, s.vessel) && Array.isArray(s.elements) && s.elements.length === 2 && s.elements.every(id => player.owned.includes(id)))).slice(0, FORMATION_LIMIT).map(l => ({ name: l.name.trim().slice(0, 40), team: normalizeSave({ ...raw, team: l.team, loadouts: [], lastReplay: null }).team }));
   player.vesselXp = Object.fromEntries(Object.entries(record(raw.vesselXp, id => Boolean(VESSEL_BY_ID[id]))).map(([id, xp]) => [id, Math.min(450, xp)]));
   player.chains = normalizeChains(raw.chains);
   player.creatures = list(raw.creatures, id => Boolean(ENEMY_BY_ID[id]), 1000);
@@ -93,6 +94,9 @@ export function normalizeSave(value: unknown): Player {
   player.learning.freshWins = list(learning?.freshWins, id => player.discoveries.includes(id));
   player.learning.elementCasts = record(learning?.elementCasts, id => Boolean(ELEMENT_BY_ID[id]));
   player.learning.elementWins = record(learning?.elementWins, id => Boolean(ELEMENT_BY_ID[id]));
+  player.learning.testedBuilds = normalizeTestedBuilds(learning?.testedBuilds);
+  player.learning.firelessWins = integer(learning?.firelessWins);
+  player.learning.poisonBossWins = integer(learning?.poisonBossWins);
   player.learning.chainElements = integer(learning?.chainElements, 0, Object.keys(ELEMENT_BY_ID).length);
   player.learning.tutorial = list(learning?.tutorial, id => (TUTORIAL_STEPS as readonly string[]).includes(id), 5);
   if (!learning) {

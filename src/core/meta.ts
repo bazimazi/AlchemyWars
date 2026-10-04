@@ -1,8 +1,8 @@
-import { abilitySlots, hasResearch } from './research.js';
-import { validAbilities } from '../data/units.js';
+import { hasResearch } from './research.js';
+export { saveLoadout, applyLoadout, renameLoadout, replaceLoadout, deleteLoadout } from './formations.js';
 import type { Player, MetaProgress, NumericModifier, Research, Quest } from '../types.js';
 import { learningDefaults, discoveryGoalProgress } from './learning.js';
-import { VESSELS, VESSEL_BY_ID, ELEMENT_BY_ID } from '../data/content.js';
+import { VESSELS, ELEMENT_BY_ID } from '../data/content.js';
 import { TALENTS, EQUIPMENT, SPECIALIZATIONS, QUESTS, ACHIEVEMENTS, PASSIVES, COSMETICS } from '../data/systems.js';
 
 export function metaDefaults(): MetaProgress {
@@ -70,16 +70,6 @@ export function claimAchievement(player: Player, id: string) {
 export function refreshAchievements(player: Player) {
   if (player.learning.tutorial.length === 5 && !player.analytics.some(e => e.name === 'tutorial_completed')) track(player, 'tutorial_completed');
   for (const a of ACHIEVEMENTS) if (!player.achievements.includes(a.id) && questProgress(player, a) >= a.target) player.achievements.push(a.id);
-}
-export function saveLoadout(player: Player, name: string) {
-  const title = String(name).trim().slice(0, 40);
-  if (!title || player.loadouts.length >= 10) return false;
-  player.loadouts.push({ name: title, team: structuredClone(player.team) }); return true;
-}
-export function applyLoadout(player: Player, index: number) {
-  const loadout = player.loadouts[index];
-  if (!loadout || loadout.team.length !== 5 || loadout.team.some(s => !VESSEL_BY_ID[s.vessel] || s.elements.some(id => !player.owned.includes(id)) || s.abilities !== undefined && !validAbilities(s.abilities, player.discoveries.length, abilitySlots(player.research), player.research))) return false;
-  player.team = structuredClone(loadout.team); return true;
 }
 export function buyCosmetic(player: Player, id: string) {
   const cosmetic = COSMETICS.find(c => c.id === id);

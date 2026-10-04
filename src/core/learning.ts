@@ -1,11 +1,12 @@
 import { DISCOVERY_REWARDS } from '../data/systems.js';
 import type { Player, LearningProgress, BattleResult, ReactionDefinition, Conditions, QuestCriteria, ReactionContext } from '../types.js';
-import { RESEARCH, ELEMENTS, ELEMENT_BY_ID, REACTION_BY_ID, STATUSES } from '../data/content.js';
+import { RESEARCH, ELEMENTS, ELEMENT_BY_ID, ENEMY_BY_ID, REACTION_BY_ID, STATUSES } from '../data/content.js';
+import { formationKey, TESTED_BUILD_LIMIT } from './formations.js';
 
 export const utcDay = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
 export const TUTORIAL_STEPS = ['discovery', 'formation', 'battle', 'reflection', 'independent'] as const;
 export function learningDefaults(now = Date.now()): LearningProgress {
-  return { unassisted: [], freshWins: [], elementCasts: {}, elementWins: {}, tutorial: [], chainElements: 0, daily: { day: utcDay(now), pairings: [], won: false, longestChain: 0, claims: [] } };
+  return { unassisted: [], freshWins: [], elementCasts: {}, elementWins: {}, tutorial: [], chainElements: 0, testedBuilds: [], firelessWins: 0, poisonBossWins: 0, daily: { day: utcDay(now), pairings: [], won: false, longestChain: 0, claims: [] } };
 }
 export function dailyGoals(now = Date.now()) {
   const day = Math.floor(now / 86400000), pool = ELEMENTS.filter(e => e.base && !e.unlockResearch);
@@ -28,6 +29,18 @@ export function recordExperimentLearning(player: Player, rule: ReactionDefinitio
 }
 export function recordBattleLearning(player: Player, battle: BattleResult, now = Date.now()) {
   const daily = currentDaily(player, now), rules = dailyGoals(now);
+  const acted = Object.entries(battle.report.units).some(([id, u]) => id.startsWith('ally-') && u.elementCasts + u.abilityCasts > 0);
+  if (acted && battle.config.team.length === 5 && player.learning.testedBuilds.length < TESTED_BUILD_LIMIT) {
+    const team = battle.config.normalized ? battle.config.team.map(s => ({ ...s, abilities: (s.abilities ?? []).slice(0, 2) })) : battle.config.team;
+    const key = formationKey(team);
+    if (!player.learning.testedBuilds.includes(key)) player.learning.testedBuilds.push(key);
+  }
+  if (acted && battle.outcome === 'victory') {
+    const fireUsed = battle.config.team.some(s => s.elements.includes('fire')) || (battle.report.elementCasts.fire ?? 0) > 0 || (battle.report.damageByElement.fire ?? 0) > 0
+      || Object.keys(battle.report.reactions).some(id => REACTION_BY_ID[id]?.inputs.includes('fire') || REACTION_BY_ID[id]?.output === 'fire');
+    if (!fireUsed) player.learning.firelessWins++;
+    if (battle.final.units.some(u => u.side === 'enemy' && u.hp === 0 && ENEMY_BY_ID[u.definitionId]?.tags.includes('boss') && (battle.report.statusDamage[u.id]?.poison ?? 0) > 0)) player.learning.poisonBossWins++;
+  }
   for (const [element, count] of Object.entries(battle.report.elementCasts)) {
     player.learning.elementCasts[element] = (player.learning.elementCasts[element] ?? 0) + count;
     if (battle.outcome === 'victory') {
@@ -61,6 +74,11 @@ export function discoveryGoalProgress(player: Player, criteria: QuestCriteria) {
     case 'fresh-victory': return player.learning.freshWins.length;
     case 'element-victories': return player.learning.elementWins[criteria.element] ?? 0;
     case 'chain-elements': return Math.max(player.learning.chainElements, ...player.chains.map(c => new Set(c.reactions.flatMap(id => [...REACTION_BY_ID[id].inputs, REACTION_BY_ID[id].output])).size));
+    case 'secret-discoveries': return player.discoveries.filter(id => REACTION_BY_ID[id].secret).length;
+    case 'legendary-discoveries': return player.discoveries.filter(id => ['Legendary', 'Mythic'].includes(REACTION_BY_ID[id].rarity)).length;
+    case 'fireless-victories': return player.learning.firelessWins;
+    case 'poison-boss-victories': return player.learning.poisonBossWins;
+    case 'tested-builds': return player.learning.testedBuilds.length;
   }
 }
 export function markTutorial(player: Player, step: string) {

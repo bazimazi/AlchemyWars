@@ -794,6 +794,16 @@ dialog h2 { font-size: 31px; margin-top: 10px; }
 .achievement { flex-wrap: wrap; }
 .achievement > span { flex: 1; min-width: 140px; }
 .achievement .button { flex-basis: 100%; }
+.achievement-progress { flex-basis: 100%; }
+.achievement-progress small { margin-top: 6px; }
+.saved-formation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); gap: 18px; }
+.saved-formation { min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+.saved-formation h3 { overflow-wrap: anywhere; margin-top: 0; }
+.saved-formation > label { display: block; font-size: 12px; margin-top: 18px; }
+.saved-formation details { font-size: 12px; }
+.saved-formation ol { padding-left: 20px; line-height: 1.7; }
+.saved-formation .button { white-space: normal; min-height: 44px; }
+.saved-formation .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .discovery-reveal[data-grade=rare] .large-glyph { filter: drop-shadow(0 0 24px color-mix(in srgb, var(--element) 65%, transparent)); }
 .discovery-reveal[data-grade=exceptional] .large-glyph { filter: drop-shadow(0 0 35px color-mix(in srgb, var(--element) 80%, transparent)); }
 .discovery-reveal[data-grade=exceptional] .reveal-orbit { border: 1px solid color-mix(in srgb, var(--element) 40%, transparent); border-radius: 50%; }

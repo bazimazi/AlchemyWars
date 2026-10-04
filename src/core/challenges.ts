@@ -5,7 +5,7 @@ import type { Player, BattleResult } from '../types.js';
 import { CONTENT_VERSION, ENEMIES, ENCOUNTERS } from '../data/content.js';
 import { rotation } from './modes.js';
 import { makeBattleConfig } from './combat.js';
-import { track } from './meta.js';
+import { track, refreshAchievements } from './meta.js';
 
 export function challengeDefinition(kind = 'daily', now = Date.now()) {
   const current = rotation(now), day = Math.floor(now / 86400000);
@@ -30,5 +30,17 @@ export function claimChallenge(player: Player, battle: BattleResult, now = Date.
   if (marker.key !== definition.key || battle.config.seed !== definition.seed || battle.outcome !== 'victory' || player.dailyClaims.includes(definition.key)) return false;
   recordBattleCodex(player, battle);
   player.dailyClaims.push(definition.key); player.gold += definition.gold; player.knowledge += definition.knowledge; player.essence += definition.essence; player.xp += 50;
-  track(player, 'challenge_completed', { kind: marker.kind }); return true;
+  track(player, 'challenge_completed', { kind: marker.kind }); refreshAchievements(player); return true;
+}
+
+// Trial defeats still test a build. Battle identity protects facts separately from period rewards.
+export function settleChallengeBattle(player: Player, battle: BattleResult, battleId: string, now = Date.now()) {
+  const marker = battle.config.challenge;
+  if (typeof battleId !== 'string' || !battleId || battleId.length > 100 || player.claimedBattles.includes(battleId) || battle.config.contentVersion !== CONTENT_VERSION || !marker || !['daily', 'weekly', 'festival'].includes(marker.kind)) return false;
+  const definition = challengeDefinition(marker.kind, now);
+  if (marker.key !== definition.key || battle.config.seed !== definition.seed) return false;
+  player.claimedBattles.push(battleId);
+  const paid = claimChallenge(player, battle, now);
+  if (!paid) { recordBattleCodex(player, battle, now); refreshAchievements(player); }
+  return paid;
 }
